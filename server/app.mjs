@@ -68,8 +68,18 @@ export function createApp(pool, cfg, deps = {}) {
 
   // Static frontend (built with `npm run build`) + SPA fallback.
   if (existsSync(join(cfg.distDir, 'index.html'))) {
-    app.use(express.static(cfg.distDir, { index: 'index.html', maxAge: '1h' }))
-    app.get(/^(?!\/api\/).*/, (_req, res) => res.sendFile(join(cfg.distDir, 'index.html')))
+    // Caching policy: the shell and service worker must always be revalidated; only content-hashed assets are immutable.
+    const noCache = (res) => res.setHeader('Cache-Control', 'no-cache')
+    app.use(express.static(cfg.distDir, {
+      index: 'index.html',
+      setHeaders(res, path) {
+        if (/[\\/]assets[\\/]/.test(path)) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+        else if (/(sw\.js|index\.html|manifest\.webmanifest)$/.test(path)) noCache(res)
+        else res.setHeader('Cache-Control', 'public, max-age=3600')
+        if (/sw\.js$/.test(path)) res.setHeader('Service-Worker-Allowed', '/')
+      },
+    }))
+    app.get(/^(?!\/api\/).*/, (_req, res) => { noCache(res); res.sendFile(join(cfg.distDir, 'index.html')) })
   }
   app.use((err, _req, res, _next) => {
     console.error('[mathema] error:', err?.message ?? err)

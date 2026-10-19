@@ -15,6 +15,7 @@ import AuthModal from './account/AuthModal'
 import FeedbackModal from './account/FeedbackModal'
 import Legal from './legal/Legal'
 import Pricing from './pricing/Pricing'
+import PwaBanner from './PwaBanner'
 import { server, ui, useStore, useT } from '../store/store'
 
 export default function App() {
@@ -69,6 +70,7 @@ export default function App() {
           </div>
         </>
       )}
+      <PwaBanner />
       <AuthModal />
       <FeedbackModal />
       <Toast />

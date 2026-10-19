@@ -4,6 +4,7 @@ import { Btn, Confirm, EmptyState, IconBtn, Label, Modal, cx } from '../common'
 import { PageShell } from './Lists'
 import { records, server, ui, useStore, useT } from '../../store/store'
 import { repository } from '../../services/repository'
+import { isIOS, promptInstall, resetAppCache, usePwa } from '../../pwa'
 import { tr, termSet, normName } from '../../core/text'
 import { kindLabel } from './Workspace'
 
@@ -46,6 +47,7 @@ export function SettingsView() {
   const t = useT()
   const s = useStore((x) => x.ui)
   const srv = useStore((x) => x.server)
+  const pwa = usePwa()
   const [confirm, setConfirm] = useState(false)
   const [pwOpen, setPwOpen] = useState(false), [delOpen, setDelOpen] = useState(false)
   const [cur, setCur] = useState(''), [nxt, setNxt] = useState(''), [delPw, setDelPw] = useState(''), [formErr, setFormErr] = useState<string | null>(null)
@@ -58,6 +60,16 @@ export function SettingsView() {
       <section className="rounded-xl border border-line bg-surface px-4">
         <Row k={t('language')}><Seg value={s.lang} opts={[['en', 'English'], ['es', 'Español']]} onChange={ui.setLang} /></Row>
         <Row k={t('theme')}><Seg value={s.theme} opts={[['light', t('light')], ['dark', t('dark')]]} onChange={ui.setTheme} /></Row>
+      </section>
+      <h2 className="serif mb-2 mt-8 text-xl">{tr(s.lang, 'Install the app', 'Instalar la app')}</h2>
+      <section className="rounded-xl border border-line bg-surface px-4 text-sm">
+        <Row k={tr(s.lang, 'MATHEMA as an app', 'MATHEMA como app')}>
+          {pwa.installed ? <span className="text-mute">{tr(s.lang, 'Installed — you are using the app.', 'Instalada — estás usando la app.')}</span>
+            : pwa.canInstall ? <Btn variant="primary" size="sm" onClick={() => void promptInstall()}>{tr(s.lang, 'Install', 'Instalar')}</Btn>
+            : <span className="block max-w-sm text-right text-mute">{isIOS() ? tr(s.lang, 'On iPhone/iPad: tap Share, then “Add to Home Screen”.', 'En iPhone/iPad: tocá Compartir y luego “Agregar a pantalla de inicio”.') : tr(s.lang, 'Use your browser’s menu → “Install app” / “Add to Home screen”. (Not offered on this page or browser.)', 'Usá el menú del navegador → “Instalar app” / “Agregar a pantalla de inicio”. (No se ofrece en esta página o navegador.)')}</span>}
+        </Row>
+        {pwa.swSupported && <Row k={tr(s.lang, 'Something looks outdated?', '¿Algo se ve desactualizado?')}><Btn variant="outline" size="sm" onClick={() => void resetAppCache()}>{tr(s.lang, 'Reset app cache', 'Restablecer caché de la app')}</Btn></Row>}
+        <Row k={tr(s.lang, 'Offline', 'Sin conexión')}><span className="max-w-sm text-right text-mute">{pwa.swSupported ? tr(s.lang, 'The app opens offline after one online visit. Only the app files are kept; your account data, AI and payments always go through the network.', 'La app abre sin conexión después de una visita con internet. Solo se guardan los archivos de la app; tus datos de cuenta, la IA y los pagos siempre usan la red.') : tr(s.lang, 'Not supported by this browser.', 'No soportado por este navegador.')}</span></Row>
       </section>
       <h2 className="serif mb-2 mt-8 text-xl">{tr(s.lang, 'Account', 'Cuenta')}</h2>
       <section className="rounded-xl border border-line bg-surface px-4 text-sm">

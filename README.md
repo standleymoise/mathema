@@ -17,6 +17,7 @@ MATHEMA turns ideas written in natural language (text, pasted equations, CSV tab
 | Knowledge Universe | Pan/zoom/drag graph, search, type filters, typed & justified relations (inferred ones are marked), jump to model/source |
 | Integrity | Every variable, equation and result carries a provenance label (source / derived / user assumption / system hypothesis / estimated / simulated / validated). No confidence levels are invented |
 | UX | Light/dark, English/Spanish, responsive (drawers on mobile), keyboard focus, dictation via Web Speech API when the browser supports it |
+| PWA | Installable, opens offline after one visit, update prompt (never reloads by surprise). Conservative cache: only the app shell; see below |
 
 Demo data (temperature–yield curve, synthetic rainfall regression, ODE, LP, causal map, reference list) is **clearly labelled as demo data**. The two FAO references are context only — no demo number was taken from them.
 
@@ -39,6 +40,10 @@ Guides: **[Hostinger deploy](docs/DEPLOY-HOSTINGER.md)** · **[model selection](
 * **MRR/ARR come from PayPal subscriptions** (verified webhooks) plus any subscriptions/payments you record by hand. Revenue is gross, USD only, with PayPal fees recorded per payment as a cost.
 * PDFs and images can be attached as *references* but their content is not read (no OCR/vision). Text, Markdown, JSON and CSV are read.
 * Models generated from free text use **placeholder parameters**, labelled as hypotheses. Fits are not validation; correlation is not causation.
+
+## PWA and caching (deliberately minimal)
+
+The service worker (`public/sw.js`) keeps **only the static app shell**: `index.html` (network-first, so a new deploy is always picked up when online), content-hashed `/assets/*` (cache-first; the file name changes on every build, so they can never be stale) and the manifest/icons. It **never** touches `/api/*` (accounts, AI, sync, PayPal), non-GET requests, other origins or error responses. A new version waits until the user taps **Update**. Each build stamps its own cache name (`vite.config.ts`) and old caches are deleted on activation. The Express server sends `no-cache` for `index.html`, `sw.js` and the manifest, and `immutable` only for hashed assets. If anything ever looks stale: **Settings → Install the app → Reset app cache** (account data is not affected). Edits made while the app is started offline are merged, not overwritten, when the connection returns.
 
 ## Architecture
 

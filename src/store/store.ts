@@ -71,7 +71,13 @@ export const useStore = <T,>(sel: (s: State) => T): T => useSyncExternalStore(su
 export const getState = () => state
 
 let applyingRemote = false
-function setDB(fn: (db: DB) => DB) { state = { ...state, db: fn(state.db) }; repository.save(state.db); emit(); if (!applyingRemote) scheduleSync() }
+function setDB(fn: (db: DB) => DB) {
+  state = { ...state, db: fn(state.db) }; repository.save(state.db); emit()
+  if (applyingRemote) return
+  scheduleSync()
+  // Edited while the account was unreachable (offline start): remember it so the next sign-in MERGES instead of letting the server copy overwrite these edits
+  if (!state.server.user) { try { if (localStorage.getItem('mathema:syncedUser')) localStorage.setItem('mathema:dirtyOffline', '1') } catch { /* ignore */ } }
+}
 function setServer(patch: Partial<ServerState>) { state = { ...state, server: { ...state.server, ...patch } }; emit() }
 function setUI(patch: Partial<UI>) {
   state = { ...state, ui: { ...state.ui, ...patch } }
@@ -381,6 +387,7 @@ export type { Lang }
 
 // ---- server: auth, usage, sync -----------------------------------------------------------
 const SYNCED_KEY = 'mathema:syncedUser'
+const DIRTY_KEY = 'mathema:dirtyOffline'
 let serverVersion = 0
 let syncTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -393,7 +400,7 @@ async function pushNow(retry = true): Promise<void> {
   if (!state.server.user) return
   setServer({ sync: 'saving' })
   const r = await api.put<{ version: number; data?: DB; error?: string }>('data', { data: state.db, version: serverVersion })
-  if (r.ok) { serverVersion = r.data.version; setServer({ sync: 'saved' }); return }
+  if (r.ok) { serverVersion = r.data.version; setServer({ sync: 'saved' }); try { localStorage.removeItem(DIRTY_KEY) } catch { /* ignore */ } return }
   if (r.status === 409 && retry && r.data.data) {
     // another device wrote first: merge its document with ours, then push once more
     serverVersion = r.data.version
@@ -409,7 +416,7 @@ async function pullAndMerge(user: ServerUser) {
   if (!r.ok) { setServer({ sync: 'error' }); return }
   serverVersion = r.data.version
   let first = true
-  try { first = localStorage.getItem(SYNCED_KEY) !== String(user.id) } catch { /* ignore */ }
+  try { first = localStorage.getItem(SYNCED_KEY) !== String(user.id) || localStorage.getItem(DIRTY_KEY) === '1' } catch { /* ignore */ }
   applyingRemote = true
   if (r.data.data) {
     // first sign-in on this device: union so nothing created while signed out is lost; afterwards the server copy leads
@@ -527,4 +534,10 @@ export const server = {
     const r = await api.post('feedback', { kind, message, page })
     return r.ok
   },
+}
+
+/** Called when the browser regains connectivity: reconnect to the server if the app started offline, else flush pending sync. */
+export function onBackOnline() {
+  if (!state.server.available) void server.init()
+  else if (state.server.user) void pushNow()
 }
