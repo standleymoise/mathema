@@ -6,7 +6,7 @@ import { createApp } from './app.mjs'
 // The process must ALWAYS start listening, even when configuration is wrong: a crash-on-start makes the
 // host answer a bare "503" with no clue. Problems are logged and reported on /api/health instead.
 const port = Number(process.env.PORT || 3001)
-const status = { ready: false, problems: [] }
+const status = { ready: false, problems: ['Connecting to the database… (if this persists for more than ~15 s, DB_HOST/DB_PORT are probably wrong or unreachable)'] }
 
 let cfg = null
 try { cfg = loadConfig() } catch (e) { status.problems.push(String(e.message)); console.error('[mathema] CONFIG ERROR:', e.message) }

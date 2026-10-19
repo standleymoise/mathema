@@ -3,7 +3,7 @@ import { SCHEMA, SEED_PLANS, SEED_PRICES, DEFAULT_SETTINGS } from './schema.mjs'
 import { hashPassword } from './crypto.mjs'
 
 export function createPool(db) {
-  return mysql.createPool({ ...db, waitForConnections: true, connectionLimit: 8, timezone: 'Z', charset: 'utf8mb4', dateStrings: false, decimalNumbers: true })
+  return mysql.createPool({ ...db, waitForConnections: true, connectionLimit: 8, connectTimeout: 8000, timezone: 'Z', charset: 'utf8mb4', dateStrings: false, decimalNumbers: true })
 }
 
 export async function migrate(pool, cfg) {
