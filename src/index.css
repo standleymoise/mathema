@@ -5,8 +5,8 @@
 
 :root {
   --bg: 250 248 244; --surface: 255 254 251; --sunk: 243 240 233; --line: 228 223 213;
-  --ink: 38 35 31; --mute: 112 106 97; --accent: 178 78 38; --accent-soft: 248 233 223;
-  --ok: 66 120 74; --warn: 166 112 20; --bad: 176 52 52;
+  --ink: 38 35 31; --mute: 112 106 97; --accent: 166 68 28; --accent-soft: 248 233 223;
+  --ok: 66 120 74; --warn: 132 86 6; --bad: 176 52 52;
   --s1: #c2562b; --s2: #2f6f8f; --s3: #5b8a3c; --s4: #8a5a9e; --s5: #b98a1f;
   --grid: rgba(60, 50, 35, 0.09);
 }
@@ -41,6 +41,14 @@ input[type='range']::-moz-range-thumb { width: 14px; height: 14px; border-radius
 .recharts-text { fill: rgb(var(--mute)); font-size: 11px; }
 .recharts-cartesian-axis-line, .recharts-cartesian-axis-tick-line { stroke: rgb(var(--line)); }
 .recharts-tooltip-wrapper { outline: none; }
+.recharts-wrapper, .recharts-surface { outline: none; }
+.recharts-cartesian-axis-tick-value, .recharts-text.recharts-cartesian-axis-tick-value { fill: rgb(var(--mute)) !important; }
+.recharts-default-tooltip { background: rgb(var(--surface)) !important; border-color: rgb(var(--line)) !important; }
+.recharts-tooltip-label { color: rgb(var(--ink)) !important; }
+.recharts-tooltip-item, .recharts-tooltip-item-name, .recharts-tooltip-item-value, .recharts-tooltip-item-separator, .recharts-tooltip-item-unit { color: rgb(var(--ink)) !important; }
+.recharts-legend-item-text { color: rgb(var(--ink)) !important; }
+.recharts-tooltip-cursor { fill: rgb(var(--ink)); fill-opacity: .06; stroke: rgb(var(--mute)); }
+.recharts-label, .recharts-label-list text { fill: rgb(var(--mute)); }
 .prose-m p { margin: 0 0 .6em; line-height: 1.65; }
 .prose-m strong { font-weight: 600; }
 
