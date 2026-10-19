@@ -1,4 +1,4 @@
-import { BookMarked, FlaskConical, Library, MessageSquare, Network, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, Sigma, X } from 'lucide-react'
+import { BookMarked, FlaskConical, Library, LogIn, MessageSquare, Network, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, ShieldCheck, Sigma, X } from 'lucide-react'
 import { cx, IconBtn } from '../common'
 import { ui, useStore, useT, type View } from '../../store/store'
 import type { Key } from '../../i18n'
@@ -7,6 +7,7 @@ export default function Sidebar() {
   const t = useT()
   const s = useStore((x) => x.ui)
   const db = useStore((x) => x.db)
+  const srv = useStore((x) => x.server)
   const collapsed = s.sidebarCollapsed
   const nav: { v: View; icon: typeof Sigma; label: Key; count?: number }[] = [
     { v: 'models', icon: Library, label: 'myModels', count: db.models.length },
@@ -60,7 +61,12 @@ export default function Sidebar() {
                 <MessageSquare size={14} className="shrink-0 text-mute" /><span className="truncate">{c.title}</span></button></li>))}
           </ul>
         </div>
-        <div className="border-t border-line p-2"><Item active={s.view === 'settings'} icon={Settings} label={t('settings')} onClick={() => ui.setView('settings')} /></div>
+        <div className="space-y-0.5 border-t border-line p-2">
+          {srv.user?.role === 'admin' && <Item active={s.view === 'admin'} icon={ShieldCheck} label="Admin" onClick={() => ui.setView('admin')} />}
+          {srv.available && !srv.user && <Item active={false} icon={LogIn} label={s.lang === 'es' ? 'Iniciar sesión' : 'Sign in'} onClick={() => { ui.setAuthOpen(true); ui.setSidebarMobile(false) }} />}
+          {srv.user && <div className={cx('truncate px-3 py-1 text-[12px] text-mute', collapsed && 'lg:hidden')} title={srv.user.email}>{srv.user.email}{srv.sync === 'saving' ? ' · …' : srv.sync === 'error' ? ' · ⚠ sync' : ''}</div>}
+          <Item active={s.view === 'settings'} icon={Settings} label={t('settings')} onClick={() => ui.setView('settings')} />
+        </div>
       </nav>
     </>
   )

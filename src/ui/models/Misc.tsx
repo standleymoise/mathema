@@ -2,9 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Download, Moon, RotateCcw, Sun, Trash2 } from 'lucide-react'
 import { Btn, Confirm, EmptyState, IconBtn, Label, cx } from '../common'
 import { PageShell } from './Lists'
-import { records, ui, useStore, useT } from '../../store/store'
-import { aiStatus } from '../../services/ai'
-import { repository, supabaseConfigured } from '../../services/repository'
+import { records, server, ui, useStore, useT } from '../../store/store'
+import { repository } from '../../services/repository'
 import { tr, termSet, normName } from '../../core/text'
 import { kindLabel } from './Workspace'
 
@@ -46,6 +45,7 @@ export function SourcesView() {
 export function SettingsView() {
   const t = useT()
   const s = useStore((x) => x.ui)
+  const srv = useStore((x) => x.server)
   const [confirm, setConfirm] = useState(false)
   const Row = ({ k, children }: { k: string; children: React.ReactNode }) => <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line py-3.5 first:border-t-0"><span className="text-sm">{k}</span><div>{children}</div></div>
   const Seg = <T extends string>({ value, opts, onChange }: { value: T; opts: [T, string][]; onChange: (v: T) => void }) => (
@@ -57,14 +57,23 @@ export function SettingsView() {
         <Row k={t('language')}><Seg value={s.lang} opts={[['en', 'English'], ['es', 'Español']]} onChange={ui.setLang} /></Row>
         <Row k={t('theme')}><Seg value={s.theme} opts={[['light', t('light')], ['dark', t('dark')]]} onChange={ui.setTheme} /></Row>
       </section>
+      <h2 className="serif mb-2 mt-8 text-xl">{tr(s.lang, 'Account', 'Cuenta')}</h2>
+      <section className="rounded-xl border border-line bg-surface px-4 text-sm">
+        {!srv.available ? <Row k={tr(s.lang, 'Mode', 'Modo')}><span className="text-right text-mute">{tr(s.lang, 'Static demo: no server detected, so accounts, cloud sync and AI are off. Everything works locally.', 'Demo estática: no se detectó servidor, así que cuentas, sincronización y IA están desactivadas. Todo funciona en local.')}</span></Row>
+          : srv.user ? <>
+            <Row k={srv.user.email}><span className="text-mute">{srv.user.role === 'admin' ? 'admin · ' : ''}{srv.usage?.plan ?? srv.user.planId}</span></Row>
+            <Row k={tr(s.lang, 'AI analyses this month', 'Análisis de IA este mes')}><span className="font-mono text-mute">{srv.usage ? `${srv.usage.used} / ${srv.usage.quota ?? '∞'}` : '…'}</span></Row>
+            <Row k={tr(s.lang, 'Cloud sync', 'Sincronización')}><span className="text-mute">{srv.sync === 'saving' ? '…' : srv.sync === 'error' ? tr(s.lang, 'error — will retry on the next change', 'error — se reintentará en el próximo cambio') : tr(s.lang, 'up to date', 'al día')}</span></Row>
+            <Row k=""><Btn variant="outline" size="sm" onClick={() => void server.logout()}>{tr(s.lang, 'Sign out', 'Cerrar sesión')}</Btn></Row></>
+          : <Row k={tr(s.lang, 'Not signed in', 'Sin sesión')}><Btn variant="primary" size="sm" onClick={() => ui.setAuthOpen(true)}>{tr(s.lang, 'Sign in / create account', 'Iniciar sesión / crear cuenta')}</Btn></Row>}
+      </section>
       <h2 className="serif mb-2 mt-8 text-xl">{tr(s.lang, 'System status', 'Estado del sistema')}</h2>
       <section className="rounded-xl border border-line bg-surface px-4 text-sm">
-        <Row k={t('aiStatus')}><span className="text-right text-mute">{aiStatus.configured ? aiStatus.provider.label : t('localAnalyzer')}</span></Row>
-        <Row k={t('persistence')}><span className="text-right text-mute">{repository.label}</span></Row>
-        <Row k="Supabase"><span className="text-right text-mute">{supabaseConfigured ? tr(s.lang, 'Variables present, but the Supabase adapter is not implemented in this prototype — data stays local.', 'Variables presentes, pero el adaptador de Supabase no está implementado en este prototipo — los datos quedan locales.') : t('notConfigured') + ' — schema + RLS in /supabase/schema.sql'}</span></Row>
+        <Row k={t('aiStatus')}><span className="text-right text-mute">{!srv.available ? t('localAnalyzer') : srv.aiAvailable ? tr(s.lang, 'AI via the MATHEMA server (keys are held by the admin, never in the browser). Equations and data tables are still solved deterministically.', 'IA vía el servidor de MATHEMA (las claves las guarda el admin, nunca el navegador). Las ecuaciones y tablas de datos se siguen resolviendo de forma determinista.') : tr(s.lang, 'Server without an AI key configured — local heuristic analyzer in use.', 'Servidor sin clave de IA configurada — se usa el analizador heurístico local.')}</span></Row>
+        <Row k={t('persistence')}><span className="text-right text-mute">{srv.user ? tr(s.lang, 'MySQL (your account) + local cache', 'MySQL (tu cuenta) + caché local') : repository.label}</span></Row>
         <Row k={tr(s.lang, 'Voice dictation', 'Dictado por voz')}><span className="text-right text-mute">{('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) ? tr(s.lang, 'Available (browser will ask for microphone permission)', 'Disponible (el navegador pedirá permiso de micrófono)') : tr(s.lang, 'Not supported by this browser', 'No soportado por este navegador')}</span></Row>
       </section>
-      <p className="mt-3 text-xs leading-relaxed text-mute">{tr(s.lang, 'No API key is ever stored in the browser. To use a real language model, set VITE_AI_ENDPOINT to a server you control that holds the key and returns the Analysis JSON (see README).', 'Nunca se guarda una clave de API en el navegador. Para usar un modelo de lenguaje real, definí VITE_AI_ENDPOINT apuntando a un servidor tuyo que guarde la clave y devuelva el JSON de Analysis (ver README).')}</p>
+      <p className="mt-3 text-xs leading-relaxed text-mute">{tr(s.lang, 'No API key is ever stored in the browser. Keys are managed by the admin on the server.', 'Nunca se guarda una clave de API en el navegador. Las claves las gestiona el admin en el servidor.')}</p>
       <h2 className="serif mb-2 mt-8 text-xl">{t('demoMode')}</h2>
       <div className="flex flex-wrap gap-2">
         <Btn variant="outline" onClick={records.exportJson}><Download size={15} />{t('exportJson')}</Btn>

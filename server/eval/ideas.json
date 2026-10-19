@@ -1,0 +1,122 @@
+[
+ {
+  "text": "Más lluvia aumenta el rendimiento del cultivo, pero el calor excesivo lo reduce.",
+  "expectKind": "causal"
+ },
+ {
+  "text": "More rain increases crop yield, but excessive heat reduces yield.",
+  "expectKind": "causal"
+ },
+ {
+  "text": "A bee population grows over time but is limited by the number of flowers.",
+  "expectKind": "dynamic"
+ },
+ {
+  "text": "La población de conejos crece de forma exponencial hasta que se acaba el alimento.",
+  "expectKind": "dynamic"
+ },
+ {
+  "text": "I want to maximize profit with a limited budget across two crops, wheat and maize, with limited land and water.",
+  "expectKind": "optimization"
+ },
+ {
+  "text": "Quiero minimizar el costo de dos fertilizantes sujeto a un mínimo de nitrógeno y fósforo.",
+  "expectKind": "optimization"
+ },
+ {
+  "text": "Yield peaks around 24 °C and falls off symmetrically on both sides.",
+  "expectKind": "function"
+ },
+ {
+  "text": "La eficacia de un medicamento sube rápido con la dosis y luego se satura.",
+  "expectKind": "function"
+ },
+ {
+  "text": "Social media use leads to lower sleep quality, which reduces concentration at school.",
+  "expectKind": "causal"
+ },
+ {
+  "text": "Does inflation reduce consumer spending, and does that slow GDP growth?",
+  "expectKind": "causal"
+ },
+ {
+  "text": "A rumor spreads through a town: the more people know it, the faster it spreads, until almost everyone knows.",
+  "expectKind": "dynamic"
+ },
+ {
+  "text": "The temperature of a coffee cup falls toward room temperature over time.",
+  "expectKind": "dynamic"
+ },
+ {
+  "text": "What is justice? It seems related to fairness, equality, law and virtue.",
+  "expectKind": "conceptual"
+ },
+ {
+  "text": "Creativity, curiosity, play and learning all seem connected in children.",
+  "expectKind": "conceptual"
+ },
+ {
+  "text": "Deforestation reduces rainfall locally, which reduces river flow and hurts fisheries.",
+  "expectKind": "causal"
+ },
+ {
+  "text": "My coffee shop makes more profit when it sells more pastries, but pastries need oven time and flour, which are limited.",
+  "expectKind": "optimization"
+ },
+ {
+  "text": "Customer churn depends on price, support quality and product usage.",
+  "expectKind": "causal"
+ },
+ {
+  "text": "A startup's cash decreases each month by burn rate and increases with revenue that grows 8% monthly.",
+  "expectKind": "dynamic"
+ },
+ {
+  "text": "Plant growth slows when it is too cold or too hot.",
+  "expectKind": "function"
+ },
+ {
+  "text": "Traffic speed decreases as the number of cars on the road increases.",
+  "expectKind": "function"
+ },
+ {
+  "text": "Poverty, education, health and crime influence each other in a neighborhood.",
+  "expectKind": "causal"
+ },
+ {
+  "text": "The idea that consciousness arises from complex information integration.",
+  "expectKind": "conceptual"
+ },
+ {
+  "text": "Bacteria in a petri dish double every 20 minutes until the nutrients are consumed.",
+  "expectKind": "dynamic"
+ },
+ {
+  "text": "Cómo asignar horas de estudio entre matemáticas y física si tengo 20 horas y cada materia da distinta nota por hora.",
+  "expectKind": "optimization"
+ },
+ {
+  "text": "Soil moisture increases with irrigation and decreases with evaporation, and yield depends on soil moisture.",
+  "expectKind": "causal"
+ },
+ {
+  "text": "Voters' trust in institutions might be affected by corruption scandals and media coverage.",
+  "expectKind": "causal"
+ },
+ {
+  "text": "y = a*exp(-b*x) + c",
+  "expectKind": "function"
+ },
+ {
+  "text": "A ball dropped from a height falls with acceleration g; how does velocity change over time?",
+  "expectKind": "dynamic"
+ },
+ {
+  "text": "Is there a relationship between music practice and math ability?",
+  "expectKind": "conceptual"
+ },
+ {
+  "text": "Tomorrow's gold price will go up because my cousin said so.",
+  "expectKind": "conceptual"
+ }
+]

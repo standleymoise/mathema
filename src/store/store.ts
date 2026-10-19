@@ -3,7 +3,9 @@
 import { useSyncExternalStore } from 'react'
 import type { ChatMessage, Conversation, DB, Experiment, Lang, MathModel, Mode, Proposal, RelationType, Scenario, Source } from '../core/types'
 import { repository } from '../services/repository'
-import { provider } from '../services/ai'
+import { AIUnavailable, analyzeWithServer, localProvider } from '../services/ai'
+import { api, type ServerUser, type Usage } from '../services/api'
+import { mergeDB } from '../core/merge'
 import { parseTable, type Dataset } from '../core/analyzer'
 import { findRelated } from '../core/memory'
 import { explainModel, researchNotes } from '../core/assist'
@@ -11,7 +13,7 @@ import { baseParams, sensitivity } from '../core/engine/runtime'
 import { now, tr, uid } from '../core/text'
 import { translate, type Key } from '../i18n'
 
-export type View = 'chat' | 'models' | 'experiments' | 'universe' | 'sources' | 'settings' | 'search'
+export type View = 'chat' | 'models' | 'experiments' | 'universe' | 'sources' | 'settings' | 'search' | 'admin'
 export type Tab = 'conversation' | 'workspace'
 
 interface UI {
@@ -29,8 +31,18 @@ interface UI {
   toast: { text: string; tone: 'ok' | 'warn' | 'bad' } | null
   searchQuery: string
   focusId: string | null
+  authOpen: boolean
 }
-interface State { db: DB; ui: UI }
+interface ServerState {
+  checked: boolean
+  available: boolean
+  signupEnabled: boolean
+  aiAvailable: boolean
+  user: ServerUser | null
+  sync: 'idle' | 'saving' | 'saved' | 'error'
+  usage: Usage | null
+}
+interface State { db: DB; ui: UI; server: ServerState }
 
 const UI_KEY = 'mathema:ui'
 function loadUI(): UI {
@@ -40,18 +52,20 @@ function loadUI(): UI {
   return {
     lang: saved.lang === 'es' ? 'es' : 'en', theme, sidebarCollapsed: !!saved.sidebarCollapsed, sidebarOpenMobile: false,
     detailsOpen: typeof innerWidth === 'number' ? innerWidth >= 1280 : true, view: 'chat', mode: 'model', activeConvId: null, selectedModelId: null, tab: 'conversation',
-    processing: null, toast: null, searchQuery: '', focusId: null,
+    processing: null, toast: null, searchQuery: '', focusId: null, authOpen: false,
   }
 }
 
-let state: State = { db: repository.load(), ui: loadUI() }
+let state: State = { db: repository.load(), ui: loadUI(), server: { checked: false, available: false, signupEnabled: false, aiAvailable: false, user: null, sync: 'idle', usage: null } }
 const listeners = new Set<() => void>()
 const emit = () => listeners.forEach((l) => l())
 export const subscribe = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l) } }
 export const useStore = <T,>(sel: (s: State) => T): T => useSyncExternalStore(subscribe, () => sel(state))
 export const getState = () => state
 
-function setDB(fn: (db: DB) => DB) { state = { ...state, db: fn(state.db) }; repository.save(state.db); emit() }
+let applyingRemote = false
+function setDB(fn: (db: DB) => DB) { state = { ...state, db: fn(state.db) }; repository.save(state.db); emit(); if (!applyingRemote) scheduleSync() }
+function setServer(patch: Partial<ServerState>) { state = { ...state, server: { ...state.server, ...patch } }; emit() }
 function setUI(patch: Partial<UI>) {
   state = { ...state, ui: { ...state.ui, ...patch } }
   try { localStorage.setItem(UI_KEY, JSON.stringify({ lang: state.ui.lang, sidebarCollapsed: state.ui.sidebarCollapsed })) } catch { /* ignore */ }
@@ -81,6 +95,7 @@ export const ui = {
   setMode: (mode: Mode) => setUI({ mode }),
   setTab: (tab: Tab) => setUI({ tab }),
   setSearch: (searchQuery: string) => setUI({ searchQuery }),
+  setAuthOpen: (authOpen: boolean) => setUI({ authOpen }),
   openSource: (id: string) => setUI({ view: 'sources', focusId: id, sidebarOpenMobile: false }),
   openInUniverse: (id: string) => setUI({ view: 'universe', focusId: id, sidebarOpenMobile: false }),
   clearFocus: () => setUI({ focusId: null }),
@@ -225,7 +240,7 @@ export async function sendMessage(text: string, files: AttachedFile[] = []) {
   pushMessage(convId, userMsg)
   setUI({ tab: 'conversation', view: 'chat' })
 
-  const base = { id: uid('msg'), role: 'assistant' as const, createdAt: now(), mode, engine: provider.id }
+  const base = { id: uid('msg'), role: 'assistant' as const, createdAt: now(), mode, engine: localProvider.id }
   const selected = getModel(state.ui.selectedModelId)
   try {
     setUI({ processing: L('Reading your input…', 'Leyendo tu entrada…') }); await wait(220)
@@ -253,13 +268,37 @@ export async function sendMessage(text: string, files: AttachedFile[] = []) {
 
     // new idea: analyse
     setUI({ processing: L('Extracting concepts, variables and relations…', 'Extrayendo conceptos, variables y relaciones…') })
-    const analysis = await provider.analyze({ text: body, lang, datasets })
+    // Deterministic paths first (explicit equation, numeric table): exact, free, no model needed.
+    const local = await localProvider.analyze({ text: body, lang, datasets })
+    const deterministic = datasets.length > 0 || local.draft.kind === 'regression' || local.draft.kind === 'function'
+    let analysis = local
+    let aiNote = ''
+    if (deterministic) {
+      if (state.server.user && state.server.aiAvailable) aiNote = L('Deterministic path (explicit equation or data table): no AI call was needed.', 'Camino determinista (ecuación explícita o tabla de datos): no hizo falta llamar a la IA.')
+    } else if (state.server.user && state.server.aiAvailable) {
+      setUI({ processing: L('Asking the AI model to propose a structure (validated afterwards by the deterministic engine)…', 'Pidiendo al modelo de IA que proponga una estructura (luego la valida el motor determinista)…') })
+      try {
+        const r = await analyzeWithServer({ text: body, lang, datasets, mode })
+        analysis = r.analysis
+        if (r.quota) setServer({ usage: { ...(state.server.usage ?? { plan: '', resetsAt: '' }), used: r.quota.used, quota: r.quota.quota } })
+      } catch (e) {
+        const u = e instanceof AIUnavailable ? e : null
+        const why = u?.code === 'quota_exceeded' ? L(`monthly AI quota reached (${u.extra.used}/${u.extra.quota})`, `cuota mensual de IA alcanzada (${u.extra.used}/${u.extra.quota})`)
+          : u?.code === 'daily_cap_reached' ? L('daily AI limit reached', 'límite diario de IA alcanzado')
+          : u?.code === 'rejected_by_engine' ? L(`the AI proposal failed validation (${u.message})`, `la propuesta de la IA no pasó la validación (${u.message})`)
+          : L(`AI unavailable (${u?.message ?? 'error'})`, `IA no disponible (${u?.message ?? 'error'})`)
+        aiNote = L(`Used the local heuristic analyzer instead: ${why}.`, `Se usó el analizador heurístico local: ${why}.`)
+        analysis = local
+      }
+    } else if (state.server.available && !state.server.user) {
+      aiNote = L('Tip: sign in to use the AI model for ideas without equations or data.', 'Tip: iniciá sesión para usar el modelo de IA con ideas sin ecuaciones ni datos.')
+    }
     await wait(200)
     setUI({ processing: L('Choosing a formalisation and checking memory…', 'Eligiendo una formalización y revisando la memoria…') }); await wait(240)
     const draft = { ...analysis.draft, sourceIds: newSources.map((s) => s.id) }
     const related = findRelated(draft, state.db.models, lang)
     const pending = related.some((p) => p.suggestion === 'new-version')
-    const intro = L(`I read this as a **${draft.kind}** problem about ${analysis.topic}. Central question: ${analysis.centralQuestion}`, `Lo leí como un problema de tipo **${draft.kind}** sobre ${analysis.topic}. Pregunta central: ${analysis.centralQuestion}`)
+    const intro = L(`I read this as a **${draft.kind}** problem about ${analysis.topic}. Central question: ${analysis.centralQuestion}`, `Lo leí como un problema de tipo **${draft.kind}** sobre ${analysis.topic}. Pregunta central: ${analysis.centralQuestion}`) + (aiNote ? `\n\n${aiNote}` : '')
 
     if (mode === 'model' && !pending) {
       setDB((db) => ({ ...db, models: [...db.models, draft] }))
@@ -330,3 +369,94 @@ export function buildFromMessage(convId: string, msgId: string) {
   if (id) patchMessage(convId, msgId, (m) => ({ ...m, actions: undefined }))
 }
 export type { Lang }
+
+// ---- server: auth, usage, sync -----------------------------------------------------------
+const SYNCED_KEY = 'mathema:syncedUser'
+let serverVersion = 0
+let syncTimer: ReturnType<typeof setTimeout> | undefined
+
+function scheduleSync() {
+  if (!state.server.user) return
+  clearTimeout(syncTimer)
+  syncTimer = setTimeout(() => { void pushNow() }, 1500)
+}
+async function pushNow(retry = true): Promise<void> {
+  if (!state.server.user) return
+  setServer({ sync: 'saving' })
+  const r = await api.put<{ version: number; data?: DB; error?: string }>('data', { data: state.db, version: serverVersion })
+  if (r.ok) { serverVersion = r.data.version; setServer({ sync: 'saved' }); return }
+  if (r.status === 409 && retry && r.data.data) {
+    // another device wrote first: merge its document with ours, then push once more
+    serverVersion = r.data.version
+    applyingRemote = true
+    state = { ...state, db: mergeDB(state.db, r.data.data) }; repository.save(state.db); emit()
+    applyingRemote = false
+    return pushNow(false)
+  }
+  setServer({ sync: 'error' })
+}
+async function pullAndMerge(user: ServerUser) {
+  const r = await api.get<{ version: number; data: DB | null }>('data')
+  if (!r.ok) { setServer({ sync: 'error' }); return }
+  serverVersion = r.data.version
+  let first = true
+  try { first = localStorage.getItem(SYNCED_KEY) !== String(user.id) } catch { /* ignore */ }
+  applyingRemote = true
+  if (r.data.data) {
+    // first sign-in on this device: union so nothing created while signed out is lost; afterwards the server copy leads
+    state = { ...state, db: first ? mergeDB(state.db, r.data.data) : r.data.data }
+    repository.save(state.db); emit()
+  }
+  applyingRemote = false
+  try { localStorage.setItem(SYNCED_KEY, String(user.id)) } catch { /* ignore */ }
+  await pushNow()
+}
+async function loadUsage() {
+  const r = await api.get<Usage>('usage')
+  if (r.ok) setServer({ usage: r.data })
+}
+
+export const server = {
+  async init() {
+    const r = await api.get<{ server: boolean; signupEnabled: boolean; aiAvailable: boolean; user: ServerUser | null }>('config')
+    if (!r.ok || !r.data?.server) { setServer({ checked: true, available: false }); return }
+    setServer({ checked: true, available: true, signupEnabled: r.data.signupEnabled, aiAvailable: r.data.aiAvailable, user: r.data.user })
+    if (r.data.user) { await pullAndMerge(r.data.user); void loadUsage() }
+  },
+  async authenticate(mode: 'login' | 'register', email: string, password: string, name = ''): Promise<string | null> {
+    const r = await api.post<{ user?: ServerUser; error?: string; detail?: string }>(`auth/${mode}`, { email, password, name })
+    if (!r.ok || !r.data?.user) {
+      const code = r.data?.error ?? (r.status === 0 ? 'offline' : 'error')
+      const msg: Record<string, [string, string]> = {
+        invalid_credentials: ['Wrong email or password.', 'Correo o contraseña incorrectos.'], email_taken: ['That email is already registered.', 'Ese correo ya está registrado.'],
+        weak_password: ['Use at least 10 characters.', 'Usá al menos 10 caracteres.'], invalid_email: ['That email does not look valid.', 'Ese correo no parece válido.'],
+        signup_disabled: ['Sign-ups are closed.', 'El registro está cerrado.'], too_many_attempts: ['Too many attempts. Wait a few minutes.', 'Demasiados intentos. Esperá unos minutos.'],
+        offline: ['Cannot reach the server.', 'No se pudo contactar al servidor.'],
+      }
+      const m = msg[code] ?? ['Something went wrong.', 'Algo salió mal.']
+      return tr(state.ui.lang, m[0], m[1])
+    }
+    setServer({ user: r.data.user })
+    const cfg = await api.get<{ aiAvailable: boolean }>('config')
+    if (cfg.ok) setServer({ aiAvailable: cfg.data.aiAvailable })
+    await pullAndMerge(r.data.user)
+    void loadUsage()
+    return null
+  },
+  async logout() {
+    clearTimeout(syncTimer)
+    await pushNow()
+    const saved = state.server.sync !== 'error'
+    await api.post('auth/logout', {})
+    setServer({ user: null, usage: null, sync: 'idle' })
+    if (saved) {
+      // data is safe in the account: leave no private models behind on this device
+      try { localStorage.removeItem(SYNCED_KEY) } catch { /* ignore */ }
+      applyingRemote = true
+      state = { ...state, db: repository.reset(), ui: { ...state.ui, activeConvId: null, selectedModelId: null, view: 'chat', tab: 'conversation' } }
+      emit()
+      applyingRemote = false
+    } else toast(tr(state.ui.lang, 'Signed out, but the last changes could not be saved to your account; they remain on this device.', 'Sesión cerrada, pero los últimos cambios no se pudieron guardar en tu cuenta; quedan en este dispositivo.'), 'warn')
+  },
+  refreshUsage: loadUsage,
+}

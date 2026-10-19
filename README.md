@@ -13,18 +13,31 @@ MATHEMA turns ideas written in natural language (text, pasted equations, CSV tab
 | Idea → model | Local **heuristic** analyzer picks a formalisation: explicit equation → function, numeric table → regression, optimisation/dynamics keywords → LP / ODE templates, causal verbs → signed causal graph, otherwise a concept map |
 | Interactive models | Function (editable, validated equation + sliders), regression (CI & prediction bands, residuals, predictor), ODE (RK4), 2-variable LP (exact, feasible-region plot), signed causal graph (drag nodes, qualitative effect propagation) |
 | Experimentation | Live parameter updates, saved scenarios + comparison table, one-at-a-time sensitivity (tornado), experiments log |
-| Memory | Versioned models with restore, related-model retrieval, **merge/link proposals that are never applied automatically**, unit-mismatch warnings |
+| Memory | Versioned models with restore, related-model retrieval, **merge/link proposals that are never applied automatically**, unit-mismatch warnings; cloud sync across devices when signed in |
 | Knowledge Universe | Pan/zoom/drag graph, search, type filters, typed & justified relations (inferred ones are marked), jump to model/source |
 | Integrity | Every variable, equation and result carries a provenance label (source / derived / user assumption / system hypothesis / estimated / simulated / validated). No confidence levels are invented |
 | UX | Light/dark, English/Spanish, responsive (drawers on mobile), keyboard focus, dictation via Web Speech API when the browser supports it |
 
 Demo data (temperature–yield curve, synthetic rainfall regression, ODE, LP, causal map, reference list) is **clearly labelled as demo data**. The two FAO references are context only — no demo number was taken from them.
 
+## Two ways to run it
+
+| | Static demo (GitHub Pages) | Full app (Node + MySQL, e.g. Hostinger) |
+|---|---|---|
+| Accounts, cloud sync | no | yes (email + password, MySQL) |
+| AI proposals | no (local heuristic analyzer) | yes: Claude and/or OpenAI, keys held by the admin, encrypted |
+| Plans, quotas, cost tracking | no | yes |
+| Admin + finance (MRR, ARR, cost per app/model/user, margin) | no | yes |
+
+Deployment: **[docs/DEPLOY-HOSTINGER.md](docs/DEPLOY-HOSTINGER.md)**. Model selection: **[docs/EVAL.md](docs/EVAL.md)**.
+
 ## Honest limits
 
-* **No language model is called by default.** The analyzer is deterministic rules, and every message says so. A real LLM plugs in behind `src/services/ai.ts` through `VITE_AI_ENDPOINT` — a *server-side* endpoint you control that holds the API key and returns the `Analysis` JSON (see `src/core/analyzer.ts`). API keys never go in the frontend.
-* **Persistence is local** (browser `localStorage`). `supabase/schema.sql` contains the multi-user schema with Row Level Security (owner-only) and the `Repository` interface in `src/services/repository.ts` is the seam for it; the Supabase adapter itself is not implemented yet.
-* PDFs and images can be attached as *references* but their content is not read (no OCR/vision in the demo). Text, Markdown, JSON and CSV are read.
+* **Equations and data tables are never sent to an AI**: they are solved deterministically (exact, free). AI is used only for ideas without equations or data, and its output is a *proposal* that MATHEMA re-validates (every expression parsed by our own engine, ODEs integrated, LP checked) and labels as a system hypothesis. If validation or the AI fails, the local analyzer is used and the message says so.
+* **No language model runs in the static demo**; the analyzer there is deterministic rules and every message says so.
+* **Prices are yours to maintain**: costs = tokens × the per-million-token prices entered in the Admin panel (Anthropic defaults are pre-filled; verify them). A model without a price is flagged, never silently invented.
+* **MRR/ARR come from subscriptions and payments recorded in the admin panel** until a payment provider is connected (next step).
+* PDFs and images can be attached as *references* but their content is not read (no OCR/vision). Text, Markdown, JSON and CSV are read.
 * Models generated from free text use **placeholder parameters**, labelled as hypotheses. Fits are not validation; correlation is not causation.
 
 ## Architecture
@@ -38,11 +51,12 @@ src/
     memory.ts      related-model retrieval, proposals, Knowledge-Universe graph builder
     assist.ts      Understand / Research templates
     demo.ts        labelled demonstration corpus
-  services/        ai.ts (provider seam), repository.ts (persistence seam)
+  services/        ai.ts (server AI client), api.ts, repository.ts (local cache)
   store/           single external store + actions
   ui/              layout, chat, models, viz (one view per model kind), universe
   i18n/            en / es dictionary
-supabase/schema.sql   tables + RLS
+server/            Express API: auth, AI gateway (Claude/OpenAI), sync, admin, finance; MySQL schema in server/schema.mjs
+docs/              deployment and model-evaluation guides
 ```
 
 The maths engine is separate from any generative AI and never executes model-generated code: equations are parsed by a small grammar into an AST and interpreted.
@@ -51,7 +65,7 @@ The maths engine is separate from any generative AI and never executes model-gen
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173
+npm run dev        # http://localhost:5173 (static demo; run `npm run dev:server` too for the full app)
 npm test           # engine unit tests (parser, RK4, OLS, LP, sign propagation)
 npm run build      # type-check + production build into dist/
 ```

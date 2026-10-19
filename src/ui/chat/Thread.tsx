@@ -74,7 +74,7 @@ function ProposalCard({ convId, msg, p }: { convId: string; msg: ChatMessage; p:
 function Assistant({ convId, msg }: { convId: string; msg: ChatMessage }) {
   const lang = useStore((s) => s.ui.lang)
   const model = useStore((s) => s.db.models.find((m) => m.id === msg.modelId))
-  const engineLabel = msg.engine === 'local-heuristics' ? tr(lang, 'Local heuristic analyzer · not a language model', 'Analizador heurístico local · no es un modelo de lenguaje') : msg.engine
+  const engineLabel = msg.engine === 'local-heuristics' ? tr(lang, 'Local heuristic analyzer · not a language model', 'Analizador heurístico local · no es un modelo de lenguaje') : msg.engine?.startsWith('ai:') ? tr(lang, `AI proposal (${msg.engine.slice(3)}) · validated by the deterministic engine · values are hypotheses`, `Propuesta de IA (${msg.engine.slice(3)}) · validada por el motor determinista · los valores son hipótesis`) : msg.engine
   return (
     <div className="fade-in">
       {msg.engine && <div className="mb-1.5 text-[11px] font-medium uppercase tracking-[0.08em] text-mute">MATHEMA · {engineLabel}</div>}

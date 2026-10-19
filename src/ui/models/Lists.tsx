@@ -8,9 +8,9 @@ import { sensitivity, baseParams } from '../../core/engine/runtime'
 import { fmt } from '../viz/shared'
 import { tr } from '../../core/text'
 
-export function PageShell({ title, sub, children, action }: { title: string; sub?: string; children: React.ReactNode; action?: React.ReactNode }) {
+export function PageShell({ title, sub, children, action, wide }: { title: string; sub?: string; children: React.ReactNode; action?: React.ReactNode; wide?: boolean }) {
   return (
-    <div className="scroll h-full"><div className="fade-in mx-auto w-full max-w-4xl px-4 pb-16 pt-6 sm:px-6 sm:pt-10">
+    <div className="scroll h-full"><div className={`fade-in mx-auto w-full ${wide ? 'max-w-6xl' : 'max-w-4xl'} px-4 pb-16 pt-6 sm:px-6 sm:pt-10`}>
       <div className="mb-6 flex items-end justify-between gap-4"><div><h1 className="serif text-3xl sm:text-4xl">{title}</h1>{sub && <p className="mt-1.5 max-w-xl text-[15px] text-mute">{sub}</p>}</div>{action}</div>
       {children}
     </div></div>

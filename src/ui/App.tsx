@@ -10,7 +10,9 @@ import Universe from './universe/Universe'
 import { ExperimentsView, ModelsView } from './models/Lists'
 import { SearchView, SettingsView, SourcesView } from './models/Misc'
 import { IconBtn, Toast, cx } from './common'
-import { ui, useStore, useT } from '../store/store'
+import Admin from './admin/Admin'
+import AuthModal from './account/AuthModal'
+import { server, ui, useStore, useT } from '../store/store'
 
 export default function App() {
   const t = useT()
@@ -19,6 +21,7 @@ export default function App() {
   const model = db.models.find((m) => m.id === s.selectedModelId)
   const conv = db.conversations.find((c) => c.id === s.activeConvId)
   useEffect(() => { document.documentElement.lang = s.lang }, [s.lang])
+  useEffect(() => { void server.init() }, [])
   // If the selected model disappears (deleted), fall back to conversation.
   useEffect(() => { if (s.selectedModelId && !model) ui.selectModel(null) }, [s.selectedModelId, model])
 
@@ -45,7 +48,7 @@ export default function App() {
           </div>
         </header>
         <div className="flex min-h-0 flex-1 flex-col">
-          {s.view === 'universe' ? <Universe /> : s.view === 'models' ? <ModelsView /> : s.view === 'experiments' ? <ExperimentsView /> : s.view === 'sources' ? <SourcesView /> : s.view === 'settings' ? <SettingsView /> : s.view === 'search' ? <SearchView /> : (
+          {s.view === 'universe' ? <Universe /> : s.view === 'models' ? <ModelsView /> : s.view === 'experiments' ? <ExperimentsView /> : s.view === 'sources' ? <SourcesView /> : s.view === 'settings' ? <SettingsView /> : s.view === 'search' ? <SearchView /> : s.view === 'admin' ? <Admin /> : (
             <>
               <div className="scroll flex min-h-0 flex-1 flex-col">
                 {showWorkspace && model ? <Workspace key={`${model.id}:${model.version}`} model={model} /> : conv ? <Thread conv={conv} /> : <Welcome />}
@@ -63,6 +66,7 @@ export default function App() {
           </div>
         </>
       )}
+      <AuthModal />
       <Toast />
     </div>
   )

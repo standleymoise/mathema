@@ -1,5 +1,6 @@
-// Persistence seam. `LocalRepository` is the working demo-mode implementation (browser localStorage).
-// A Supabase implementation can be dropped in behind the same interface; schema + RLS are in /supabase.
+// Persistence seam. `localRepository` is the browser cache and the only store in the static demo.
+// For signed-in users the store (src/store/store.ts) additionally syncs the whole document to MySQL
+// through the MATHEMA server (/api/data).
 import type { DB } from '../core/types'
 import { seedDB } from '../core/demo'
 
@@ -35,5 +36,4 @@ export const localRepository: Repository = {
   },
 }
 
-export const supabaseConfigured = !!(import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY)
 export const repository: Repository = localRepository
