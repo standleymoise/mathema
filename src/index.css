@@ -1,0 +1,48 @@
+@import 'katex/dist/katex.min.css';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: 250 248 244; --surface: 255 254 251; --sunk: 243 240 233; --line: 228 223 213;
+  --ink: 38 35 31; --mute: 112 106 97; --accent: 178 78 38; --accent-soft: 248 233 223;
+  --ok: 66 120 74; --warn: 166 112 20; --bad: 176 52 52;
+  --s1: #c2562b; --s2: #2f6f8f; --s3: #5b8a3c; --s4: #8a5a9e; --s5: #b98a1f;
+  --grid: rgba(60, 50, 35, 0.09);
+}
+:root[data-theme='dark'] {
+  --bg: 24 23 21; --surface: 33 31 29; --sunk: 19 18 16; --line: 56 53 48;
+  --ink: 238 233 225; --mute: 160 154 144; --accent: 226 132 92; --accent-soft: 61 40 31;
+  --ok: 126 190 134; --warn: 224 176 80; --bad: 232 120 120;
+  --s1: #e58a5f; --s2: #6bb3d6; --s3: #98c46f; --s4: #c39bd6; --s5: #e1b84f;
+  --grid: rgba(255, 245, 225, 0.09);
+  color-scheme: dark;
+}
+* { -webkit-tap-highlight-color: transparent; }
+html, body, #root { height: 100%; }
+body { margin: 0; background: rgb(var(--bg)); color: rgb(var(--ink)); font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-feature-settings: 'cv11', 'ss01'; -webkit-font-smoothing: antialiased; overflow: hidden; overscroll-behavior: none; }
+::selection { background: rgb(var(--accent) / 0.25); }
+:focus-visible { outline: 2px solid rgb(var(--accent)); outline-offset: 2px; border-radius: 6px; }
+.serif { font-family: Newsreader, Georgia, serif; }
+.scroll { overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgb(var(--line)) transparent; }
+.katex { font-size: 1.08em; }
+.katex-display { margin: 0.4em 0; overflow-x: auto; overflow-y: hidden; padding: 4px 0; }
+.fade-in { animation: fade-in 220ms ease-out both; }
+@keyframes fade-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.pulse-dot { animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { *, ::before, ::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+
+input[type='range'] { -webkit-appearance: none; appearance: none; height: 28px; background: transparent; width: 100%; touch-action: pan-y; }
+input[type='range']::-webkit-slider-runnable-track { height: 3px; background: rgb(var(--line)); border-radius: 2px; }
+input[type='range']::-moz-range-track { height: 3px; background: rgb(var(--line)); border-radius: 2px; }
+input[type='range']::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; margin-top: -7.5px; border-radius: 50%; background: rgb(var(--accent)); border: 2px solid rgb(var(--surface)); box-shadow: 0 0 0 1px rgb(var(--accent) / .5); }
+input[type='range']::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: rgb(var(--accent)); border: 2px solid rgb(var(--surface)); }
+.recharts-text { fill: rgb(var(--mute)); font-size: 11px; }
+.recharts-cartesian-axis-line, .recharts-cartesian-axis-tick-line { stroke: rgb(var(--line)); }
+.recharts-tooltip-wrapper { outline: none; }
+.prose-m p { margin: 0 0 .6em; line-height: 1.65; }
+.prose-m strong { font-weight: 600; }
+
+[data-node]:focus { outline: none; }
+[data-node]:focus-visible circle:nth-of-type(2) { stroke: rgb(var(--accent)); stroke-width: 3; }
