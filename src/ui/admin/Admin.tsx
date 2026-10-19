@@ -37,8 +37,8 @@ const tip = { background: 'rgb(var(--surface))', border: '1px solid rgb(var(--li
 // ---- Finance --------------------------------------------------------------------------------
 interface Fin {
   month: string
-  kpis: { mrr: number; arr: number; atRiskMrr: number; activeSubscribers: number; arpu: number; churn30d: number; churnRate30d: number; aiCostThisMonth: number; expensesThisMonth: number; revenueThisMonth: number; estimatedMonthlyMargin: number; estimatedMarginPct: number | null; costPerActiveSubscriber: number | null; avgCostPerAnalysis: number | null }
-  months: { month: string; revenue: number; aiCost: number; expenses: number; profit: number; analyses: number; failed: number }[]
+  kpis: { mrr: number; arr: number; atRiskMrr: number; activeSubscribers: number; arpu: number; churn30d: number; churnRate30d: number; aiCostThisMonth: number; expensesThisMonth: number; revenueThisMonth: number; feesThisMonth: number; netRevenueThisMonth: number; estimatedRunRateFees: number; paymentsWithoutFee: number; estimatedMonthlyMargin: number; estimatedMarginPct: number | null; costPerActiveSubscriber: number | null; avgCostPerAnalysis: number | null }
+  months: { month: string; revenue: number; fees: number; aiCost: number; expenses: number; profit: number; analyses: number; failed: number }[]
   mrrHistory: { month: string; mrr: number }[]
   byPlan: { plan: string; id: string; subscribers: number; mrr: number }[]
   costByApp: Row[]; costByProvider: Row[]; costByModel: Row[]
@@ -71,15 +71,20 @@ function FinanceTab({ lang }: { lang: 'en' | 'es' }) {
         <div role="alert" className="flex items-start gap-2 rounded-xl border border-warn bg-[rgb(var(--warn)/.1)] p-3 text-sm text-warn"><AlertTriangle size={16} className="mt-0.5 shrink-0" />
           {L(`${f.unpricedCalls} call(s) this month used a model with no price set, so their cost is counted as $0. Set the price in AI & keys → Models.`, `${f.unpricedCalls} llamada(s) este mes usaron un modelo sin precio configurado, por lo que su costo cuenta como $0. Definí el precio en IA y claves → Modelos.`)}</div>
       )}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      {k.paymentsWithoutFee > 0 && (
+        <div role="alert" className="flex items-start gap-2 rounded-xl border border-warn bg-[rgb(var(--warn)/.1)] p-3 text-sm text-warn"><AlertTriangle size={16} className="mt-0.5 shrink-0" />
+          {L(`${k.paymentsWithoutFee} PayPal payment(s) this month have no fee recorded, so profit is overstated. Enter your PayPal fee schedule in Billing (PayPal) → Fee estimate.`, `${k.paymentsWithoutFee} pago(s) de PayPal de este mes no tienen comisión registrada, así que el resultado está sobrestimado. Cargá tu tarifa de PayPal en Cobros (PayPal) → Estimación de comisión.`)}</div>
+      )}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <Kpi label="MRR" value={usd(k.mrr)} sub={L('active subscriptions, yearly ÷ 12', 'suscripciones activas, anual ÷ 12')} />
         <Kpi label="ARR" value={usd(k.arr)} sub="MRR × 12" />
         <Kpi label={L('Active subscribers', 'Suscriptores activos')} value={String(k.activeSubscribers)} sub={`ARPU ${usd(k.arpu)}`} />
         <Kpi label={L('Churn (30 d)', 'Cancelaciones (30 d)')} value={`${k.churn30d}`} sub={pct(k.churnRate30d)} />
         <Kpi label={L('AI cost (this month)', 'Costo de IA (este mes)')} value={usd(k.aiCostThisMonth, 4)} sub={k.avgCostPerAnalysis !== null ? `${usd(k.avgCostPerAnalysis, 4)} / ${L('analysis', 'análisis')}` : undefined} />
         <Kpi label={L('Expenses (this month)', 'Gastos (este mes)')} value={usd(k.expensesThisMonth)} />
-        <Kpi label={L('Revenue collected (month)', 'Ingresos cobrados (mes)')} value={usd(k.revenueThisMonth)} sub={L('from recorded payments', 'de pagos registrados')} />
-        <Kpi label={L('Est. monthly margin', 'Margen mensual est.')} value={usd(k.estimatedMonthlyMargin)} sub={`${pct(k.estimatedMarginPct)} · MRR − AI − ${L('expenses', 'gastos')}`} warn={k.estimatedMonthlyMargin < 0} />
+        <Kpi label={L('Revenue collected (month)', 'Ingresos cobrados (mes)')} value={usd(k.revenueThisMonth)} sub={L('gross, from recorded payments', 'bruto, de pagos registrados')} />
+        <Kpi label={L('PayPal fees (month)', 'Comisiones PayPal (mes)')} value={usd(k.feesThisMonth)} sub={`${L('net revenue', 'ingreso neto')} ${usd(k.netRevenueThisMonth)}`} />
+        <Kpi label={L('Est. monthly margin', 'Margen mensual est.')} value={usd(k.estimatedMonthlyMargin)} sub={`${pct(k.estimatedMarginPct)} · MRR − AI − ${L('expenses', 'gastos')} − ${L('fees', 'comisiones')} (${usd(k.estimatedRunRateFees)})`} warn={k.estimatedMonthlyMargin < 0} />
       </div>
       {k.atRiskMrr > 0 && <p className="text-xs text-mute">{L(`At-risk MRR (past due): ${usd(k.atRiskMrr)} — not included in MRR.`, `MRR en riesgo (vencido): ${usd(k.atRiskMrr)} — no incluido en MRR.`)}</p>}
 
@@ -91,6 +96,7 @@ function FinanceTab({ lang }: { lang: 'en' | 'es' }) {
             <Bar dataKey="revenue" name={L('Revenue', 'Ingresos')} fill="var(--s3)" isAnimationActive={false} />
             <Bar dataKey="aiCost" name={L('AI cost', 'Costo IA')} stackId="c" fill="var(--s1)" isAnimationActive={false} />
             <Bar dataKey="expenses" name={L('Expenses', 'Gastos')} stackId="c" fill="var(--s5)" isAnimationActive={false} />
+            <Bar dataKey="fees" name={L('PayPal fees', 'Comisiones PayPal')} stackId="c" fill="var(--s4)" isAnimationActive={false} />
             <Line dataKey="profit" name={L('Profit', 'Resultado')} stroke="var(--s2)" strokeWidth={2} dot={false} isAnimationActive={false} />
           </ComposedChart></ResponsiveContainer></div>
       </div>
@@ -112,7 +118,7 @@ function FinanceTab({ lang }: { lang: 'en' | 'es' }) {
       <div className={card}><Label>{L('Subscribers by plan', 'Suscriptores por plan')}</Label>
         <table className="w-full text-[13px]"><tbody>{f.byPlan.map((p) => <tr key={p.id} className="border-t border-line first:border-t-0"><td className="py-1.5">{p.plan}</td><td className="text-right font-mono">{p.subscribers}</td><td className="text-right font-mono">{usd(p.mrr)}</td></tr>)}</tbody></table>
       </div>
-      <p className="text-xs leading-relaxed text-mute">{L('Costs = tokens × the prices you set under AI & keys → Models (verify them against each provider’s pricing page). MRR comes from subscriptions you record here until a payment provider is connected. Revenue and expenses are global; AI cost is split by app.', 'Costos = tokens × los precios que definís en IA y claves → Modelos (verificalos en la página de precios de cada proveedor). El MRR sale de las suscripciones que registrás acá hasta conectar un procesador de pagos. Ingresos y gastos son globales; el costo de IA se divide por app.')}</p>
+      <p className="text-xs leading-relaxed text-mute">{L('Costs = tokens × the prices you set under AI & keys → Models (verify them against each provider’s pricing page). MRR comes from subscriptions you record here until a payment provider is connected. Revenue, PayPal fees and expenses are global; AI cost is split by app. Result = revenue − PayPal fees − AI cost − expenses.', 'Costos = tokens × los precios que definís en IA y claves → Modelos (verificalos en la página de precios de cada proveedor). El MRR sale de las suscripciones que registrás acá hasta conectar un procesador de pagos. Ingresos y gastos son globales; el costo de IA se divide por app.')}</p>
     </div>
   )
 }
@@ -120,7 +126,7 @@ function FinanceTab({ lang }: { lang: 'en' | 'es' }) {
 // ---- AI & keys ------------------------------------------------------------------------------
 interface KeyS { provider: string; configured: boolean; source: 'admin' | 'env' | null; last4: string | null; verifiedAt: string | null }
 interface ModelRow { provider: string; model: string; label: string; inputPerMtok: number | null; outputPerMtok: number | null; enabled: boolean }
-interface Settings { aiDefault: { provider: string; model: string }; aiResearch: { provider: string; model: string }; aiEffort: string; signupMode: 'open' | 'invite' | 'closed'; dailyCapPerUser: number; legalEntity: string; legalEmail: string }
+interface Settings { aiDefault: { provider: string; model: string }; aiResearch: { provider: string; model: string }; aiEffort: string; signupMode: 'open' | 'invite' | 'closed'; dailyCapPerUser: number; legalEntity: string; legalEmail: string; paypalFeePercent: number; paypalFeeFixedCents: number }
 
 function KeyCard({ k, lang, reload }: { k: KeyS; lang: 'en' | 'es'; reload: () => void }) {
   const L = (en: string, es: string) => tr(lang, en, es)
@@ -271,22 +277,23 @@ function PeopleTab({ lang }: { lang: 'en' | 'es' }) {
 }
 
 // ---- Money in/out ---------------------------------------------------------------------------
-interface Pay { id: number; email: string | null; amountCents: number; paidAt: string; note: string }
+interface Pay { id: number; email: string | null; amountCents: number; feeCents: number; feeEstimated: number; source: string; paidAt: string; note: string }
 interface Exp { id: number; name: string; category: string; amountCents: number; month: string; recurring: boolean }
 function MoneyTab({ lang }: { lang: 'en' | 'es' }) {
   const L = (en: string, es: string) => tr(lang, en, es)
   const pays = useAdmin<Pay[]>('payments'), exps = useAdmin<Exp[]>('expenses'), audit = useAdmin<{ id: number; action: string; detail: string; createdAt: string; email: string | null }[]>('audit')
-  const [p, setP] = useState({ amount: '', note: '' })
+  const [p, setP] = useState({ amount: '', fee: '', note: '' })
   const [x, setX] = useState({ name: '', amount: '', month: new Date().toISOString().slice(0, 7), recurring: true })
   return (
     <div className="grid min-w-0 grid-cols-1 gap-4">
       <div className={card}><Label>{L('Payments received (revenue)', 'Pagos recibidos (ingresos)')}</Label>
-        <form className="mb-3 flex flex-wrap gap-2" onSubmit={async (e) => { e.preventDefault(); await act(api.post('admin/payments', { amountCents: Math.round(Number(p.amount) * 100), note: p.note }), L('Payment recorded.', 'Pago registrado.'), () => { setP({ amount: '', note: '' }); pays.reload() }) }}>
+        <form className="mb-3 flex flex-wrap gap-2" onSubmit={async (e) => { e.preventDefault(); await act(api.post('admin/payments', { amountCents: Math.round(Number(p.amount) * 100), feeCents: p.fee ? Math.round(Number(p.fee) * 100) : 0, note: p.note }), L('Payment recorded.', 'Pago registrado.'), () => { setP({ amount: '', fee: '', note: '' }); pays.reload() }) }}>
           <input aria-label="Amount USD" inputMode="decimal" className={cx(input, 'w-28')} placeholder="USD" value={p.amount} onChange={(e) => setP({ ...p, amount: e.target.value })} />
+          <input aria-label="Fee USD" inputMode="decimal" className={cx(input, 'w-28')} placeholder={L('fee USD', 'comisión USD')} value={p.fee} onChange={(e) => setP({ ...p, fee: e.target.value })} />
           <input aria-label="Note" className={cx(input, 'min-w-0 flex-1')} placeholder={L('Note (customer, invoice…)', 'Nota (cliente, factura…)')} value={p.note} onChange={(e) => setP({ ...p, note: e.target.value })} />
           <Btn type="submit" variant="outline" size="sm" className="h-9" disabled={!Number(p.amount)}>{L('Record', 'Registrar')}</Btn>
         </form>
-        <table className="w-full text-[13px]"><tbody>{(pays.data ?? []).slice(0, 30).map((r) => <tr key={r.id} className="border-t border-line"><td className="py-1.5">{new Date(r.paidAt).toLocaleDateString()}</td><td className="text-mute">{r.note || r.email || ''}</td><td className="text-right font-mono">{usd(r.amountCents / 100)}</td><td className="text-right"><IconBtn label="Delete payment" className="h-8 w-8" onClick={() => { if (confirm(L('Delete this payment?', '¿Eliminar este pago?'))) void act(api.del(`admin/payments/${r.id}`), L('Deleted.', 'Eliminado.'), pays.reload) }}><Trash2 size={14} /></IconBtn></td></tr>)}</tbody></table>
+        <table className="w-full text-[13px]"><tbody>{(pays.data ?? []).slice(0, 30).map((r) => <tr key={r.id} className="border-t border-line"><td className="py-1.5">{new Date(r.paidAt).toLocaleDateString()}</td><td className="text-mute">{r.note || r.email || ''}</td><td className="text-right font-mono">{usd(r.amountCents / 100)}{r.feeCents > 0 && <span className="ml-2 text-xs text-mute">− {usd(r.feeCents / 100)}{r.feeEstimated ? ' (est.)' : ''}</span>}</td><td className="text-right"><IconBtn label="Delete payment" className="h-8 w-8" onClick={() => { if (confirm(L('Delete this payment?', '¿Eliminar este pago?'))) void act(api.del(`admin/payments/${r.id}`), L('Deleted.', 'Eliminado.'), pays.reload) }}><Trash2 size={14} /></IconBtn></td></tr>)}</tbody></table>
       </div>
       <div className={card}><Label>{L('Expenses (hosting, domains, tools…)', 'Gastos (hosting, dominios, herramientas…)')}</Label>
         <form className="mb-3 flex flex-wrap gap-2" onSubmit={async (e) => { e.preventDefault(); await act(api.post('admin/expenses', { name: x.name, amountCents: Math.round(Number(x.amount) * 100), month: x.month, recurring: x.recurring }), L('Expense saved.', 'Gasto guardado.'), () => { setX({ ...x, name: '', amount: '' }); exps.reload() }) }}>
@@ -333,7 +340,25 @@ function BillingTab({ lang }: { lang: 'en' | 'es' }) {
         {[['Webhook URL', data.webhookUrl], ['Return URL', data.returnUrl]].map(([k, v]) => <div key={k} className="mb-2 flex items-center gap-2"><span className="w-28 shrink-0 text-[13px] text-mute">{k}</span><code className="min-w-0 flex-1 break-all rounded bg-sunk px-2 py-1 text-[12px]">{v}</code><CopyBtn text={v} label="Copy" /></div>)}
         <p className="mt-2 text-xs text-mute">{L('Webhook events to subscribe: BILLING.SUBSCRIPTION.ACTIVATED, CANCELLED, EXPIRED, SUSPENDED, PAYMENT.FAILED and PAYMENT.SALE.COMPLETED. Paste each PayPal plan id (P-…) in Users & plans → Plans.', 'Eventos del webhook: BILLING.SUBSCRIPTION.ACTIVATED, CANCELLED, EXPIRED, SUSPENDED, PAYMENT.FAILED y PAYMENT.SALE.COMPLETED. Pegá cada id de plan de PayPal (P-…) en Usuarios y planes → Planes.')}</p>
       </div>
-      <p className="text-xs leading-relaxed text-mute">{L('Revenue is recorded gross (before PayPal fees) in USD only. Without a verified webhook nothing is activated automatically.', 'Los ingresos se registran brutos (antes de comisiones de PayPal) y solo en USD. Sin un webhook verificado no se activa nada automáticamente.')}</p>
+      <FeeEstimate lang={lang} />
+      <p className="text-xs leading-relaxed text-mute">{L('Revenue is recorded gross in USD only; PayPal fees are recorded per payment as a cost (real fee when PayPal reports it, otherwise your estimate). Without a verified webhook nothing is activated automatically.', 'Los ingresos se registran brutos (antes de comisiones de PayPal) y solo en USD. Sin un webhook verificado no se activa nada automáticamente.')}</p>
+    </div>
+  )
+}
+
+function FeeEstimate({ lang }: { lang: 'en' | 'es' }) {
+  const L = (en: string, es: string) => tr(lang, en, es)
+  const { data, reload } = useAdmin<Settings>('settings')
+  const [pct, setPct] = useState(''), [fixed, setFixed] = useState('')
+  useEffect(() => { if (data) { setPct(String(data.paypalFeePercent ?? 0)); setFixed(((data.paypalFeeFixedCents ?? 0) / 100).toFixed(2)) } }, [data])
+  return (
+    <div className={card}><Label>{L('Fee estimate', 'Estimación de comisión')}</Label>
+      <p className="mb-3 text-[13px] text-mute">{L('Used only when PayPal does not report the real fee of a payment. Enter the percentage and fixed fee from YOUR PayPal fee schedule (they depend on your country, account type and currency; there is no default). Estimated fees are flagged.', 'Se usa solo cuando PayPal no informa la comisión real de un pago. Cargá el porcentaje y el fijo de TU tarifa de PayPal (dependen de tu país, tipo de cuenta y moneda; no hay valor por defecto). Las comisiones estimadas quedan marcadas.')}</p>
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="grid gap-1 text-[12px] text-mute">% {L('per payment', 'por pago')}<input className={cx(input, 'w-24')} inputMode="decimal" value={pct} onChange={(e) => setPct(e.target.value)} /></label>
+        <label className="grid gap-1 text-[12px] text-mute">{L('Fixed fee (USD)', 'Fijo (USD)')}<input className={cx(input, 'w-24')} inputMode="decimal" value={fixed} onChange={(e) => setFixed(e.target.value)} /></label>
+        <Btn variant="primary" size="sm" className="h-9" onClick={() => act(api.put('admin/settings', { paypalFeePercent: Number(pct || 0), paypalFeeFixedCents: Math.round(Number(fixed || 0) * 100) }), L('Saved.', 'Guardado.'), reload)}>{L('Save', 'Guardar')}</Btn>
+      </div>
     </div>
   )
 }

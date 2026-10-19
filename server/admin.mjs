@@ -64,6 +64,7 @@ export function adminRoutes(pool, cfg) {
     aiDefault: await getSetting(pool, 'ai_default'), aiResearch: await getSetting(pool, 'ai_research'), aiEffort: await getSetting(pool, 'ai_effort'),
     signupMode: await getSetting(pool, 'signup_mode'), dailyCapPerUser: await getSetting(pool, 'daily_cap_per_user'),
     legalEntity: await getSetting(pool, 'legal_entity'), legalEmail: await getSetting(pool, 'legal_email'),
+    paypalFeePercent: await getSetting(pool, 'paypal_fee_percent'), paypalFeeFixedCents: await getSetting(pool, 'paypal_fee_fixed_cents'),
   }))
   r.put('/settings', async (req, res) => {
     const b = req.body ?? {}
@@ -76,6 +77,8 @@ export function adminRoutes(pool, cfg) {
     }
     if (b.aiEffort !== undefined) { if (!['low', 'medium', 'high'].includes(b.aiEffort)) return bad(res, 'effort must be low, medium or high'); await setSetting(pool, 'ai_effort', b.aiEffort) }
     if (b.signupMode !== undefined) { if (!['open', 'invite', 'closed'].includes(b.signupMode)) return bad(res, 'signupMode must be open, invite or closed'); await setSetting(pool, 'signup_mode', b.signupMode) }
+    if (b.paypalFeePercent !== undefined) { const n = Number(b.paypalFeePercent); if (!Number.isFinite(n) || n < 0 || n > 30) return bad(res, 'fee percent must be between 0 and 30'); await setSetting(pool, 'paypal_fee_percent', n) }
+    if (b.paypalFeeFixedCents !== undefined) { const n = Number(b.paypalFeeFixedCents); if (!Number.isInteger(n) || n < 0 || n > 1000) return bad(res, 'fixed fee (cents) must be an integer between 0 and 1000'); await setSetting(pool, 'paypal_fee_fixed_cents', n) }
     for (const [key, k, max] of [['legalEntity', 'legal_entity', 160], ['legalEmail', 'legal_email', 160]]) if (b[key] !== undefined) await setSetting(pool, k, String(b[key]).trim().slice(0, max))
     if (b.dailyCapPerUser !== undefined) { const n = Number(b.dailyCapPerUser); if (!Number.isInteger(n) || n < 0 || n > 10000) return bad(res, 'daily cap must be an integer 0-10000 (0 = no cap)'); await setSetting(pool, 'daily_cap_per_user', n) }
     await audit(pool, req.user.id, 'settings.update', Object.keys(b).join(','))
@@ -149,13 +152,15 @@ export function adminRoutes(pool, cfg) {
     res.json({ ok: true })
   })
 
-  r.get('/payments', async (_req, res) => { const [rows] = await pool.query('SELECT p.id,p.user_id userId,u.email,p.amount_cents amountCents,p.currency,p.paid_at paidAt,p.source,p.note FROM payments p LEFT JOIN users u ON u.id=p.user_id ORDER BY p.paid_at DESC LIMIT 300'); res.json(rows) })
+  r.get('/payments', async (_req, res) => { const [rows] = await pool.query('SELECT p.id,p.user_id userId,u.email,p.amount_cents amountCents,p.fee_cents feeCents,p.fee_estimated feeEstimated,p.currency,p.paid_at paidAt,p.source,p.note FROM payments p LEFT JOIN users u ON u.id=p.user_id ORDER BY p.paid_at DESC LIMIT 300'); res.json(rows) })
   r.post('/payments', async (req, res) => {
     const b = req.body ?? {}
     const cents = Number(b.amountCents)
     const when = b.paidAt ? new Date(b.paidAt) : new Date()
     if (!Number.isInteger(cents) || cents === 0 || isNaN(when)) return bad(res, 'amountCents (non-zero integer) and a valid date are required')
-    await pool.query('INSERT INTO payments (user_id,amount_cents,currency,paid_at,source,note) VALUES (?,?,?,?,?,?)', [b.userId ? Number(b.userId) : null, cents, 'USD', when, 'manual', String(b.note ?? '').slice(0, 255)])
+    const fee = b.feeCents === undefined || b.feeCents === '' ? 0 : Number(b.feeCents)
+    if (!Number.isInteger(fee) || fee < 0) return bad(res, 'feeCents must be a non-negative integer')
+    await pool.query('INSERT INTO payments (user_id,amount_cents,currency,paid_at,source,note,fee_cents,fee_estimated) VALUES (?,?,?,?,?,?,?,0)', [b.userId ? Number(b.userId) : null, cents, 'USD', when, 'manual', String(b.note ?? '').slice(0, 255), fee])
     await audit(pool, req.user.id, 'payment.create', String(cents))
     res.status(201).json({ ok: true })
   })

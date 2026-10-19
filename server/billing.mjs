@@ -78,7 +78,15 @@ export async function applyPaypalEvent(pool, ev) {
       const subId = r.billing_agreement_id
       const [[sub]] = subId ? await pool.query('SELECT * FROM subscriptions WHERE external_id=?', [subId]) : [[]]
       if (sub && r.amount?.currency === 'USD' && Number(r.amount.total) > 0) {
-        await pool.query('INSERT INTO payments (user_id,amount_cents,currency,paid_at,source,note) VALUES (?,?,?,?,?,?)', [sub.user_id, cents(r.amount.total), 'USD', r.create_time ? new Date(r.create_time) : new Date(), 'paypal', `PayPal sale ${r.id ?? ''} (gross)`.slice(0, 255)])
+        const gross = cents(r.amount.total)
+        // Real fee when PayPal reports it; otherwise an estimate from the admin's own fee schedule (flagged); otherwise 0 (flagged as missing in Finance).
+        let fee = 0, estimated = 0
+        if (r.transaction_fee && r.transaction_fee.currency === 'USD' && Number(r.transaction_fee.value) >= 0) fee = cents(r.transaction_fee.value)
+        else {
+          const pct = Number(await getSetting(pool, 'paypal_fee_percent')) || 0, fixed = Number(await getSetting(pool, 'paypal_fee_fixed_cents')) || 0
+          if (pct > 0 || fixed > 0) { fee = Math.min(gross, Math.round((gross * pct) / 100) + fixed); estimated = 1 }
+        }
+        await pool.query('INSERT INTO payments (user_id,amount_cents,currency,paid_at,source,note,fee_cents,fee_estimated) VALUES (?,?,?,?,?,?,?,?)', [sub.user_id, gross, 'USD', r.create_time ? new Date(r.create_time) : new Date(), 'paypal', `PayPal sale ${r.id ?? ''} (gross)`.slice(0, 255), fee, estimated])
         if (sub.status === 'past_due') await activateSubscription(pool, subId)
       }
       break

@@ -1,6 +1,6 @@
 # Charging with PayPal Subscriptions
 
-MATHEMA creates the subscription through PayPal's API, sends the customer to PayPal to approve it, then trusts only PayPal's own answer: it re-fetches the subscription on return, and it only accepts webhooks whose signature PayPal verifies. Card data never touches your server. Revenue is recorded **gross, in USD only**.
+MATHEMA creates the subscription through PayPal's API, sends the customer to PayPal to approve it, then trusts only PayPal's own answer: it re-fetches the subscription on return, and it only accepts webhooks whose signature PayPal verifies. Card data never touches your server. Revenue is recorded **gross, in USD only**, and **PayPal's fee on each payment is recorded as a cost** (real fee when PayPal reports it in the webhook, otherwise your own estimate from Admin → Billing → *Fee estimate*, flagged "est."; if neither exists the payment is flagged and Finance warns that profit is overstated). Profit = revenue − PayPal fees − AI cost − expenses.
 
 > Why PayPal: it works for a Costa Rica account and can withdraw to local banks (PayPal CR's withdrawal page lists USD/colón withdrawals to major banks). Stripe's availability for Costa Rica could not be confirmed from public sources — check `stripe.com/global`. Merchant-of-record services (Paddle, Lemon Squeezy) can also pay out via PayPal, but confirm they accept sellers from Costa Rica. **Verify in your own PayPal account** that *Subscriptions* is available for your business account and what the fees and withdrawal terms are before going live.
 
@@ -28,4 +28,4 @@ Repeat step 1 in the **Live** tab (new Client ID/Secret, a **live** plan with it
 | `…SUSPENDED` / `PAYMENT.FAILED` | `past_due` (excluded from MRR, shown as "at-risk") |
 | `…CANCELLED` / `EXPIRED` / customer cancels | `canceled`, plan back to Free |
 
-Known limits: one currency (USD); fees are not subtracted; refunds/disputes must be recorded by hand (Admin → Payments, negative amount); proration/plan changes are not automated (cancel and re-subscribe).
+Known limits: one currency (USD); the fee estimate is only as good as the percentage you enter (use the real figures from your PayPal fee schedule and compare with a PayPal statement); refunds/disputes must be recorded by hand (Admin → Payments, negative amount); proration/plan changes are not automated (cancel and re-subscribe).

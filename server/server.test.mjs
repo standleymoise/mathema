@@ -58,7 +58,8 @@ describe('finance maths', () => {
   ]
   const f = computeFinance({
     now, months: 3, subs, plans: [{ id: 'pro', name: 'Pro' }],
-    payments: [{ amount_cents: 1200, paid_at: new Date('2026-10-02') }, { amount_cents: 12000, paid_at: new Date('2026-09-10') }],
+    feeRate: { percent: 5, fixedCents: 30 },
+    payments: [{ amount_cents: 1200, fee_cents: 65, source: 'paypal', paid_at: new Date('2026-10-02') }, { amount_cents: 12000, fee_cents: 0, source: 'paypal', paid_at: new Date('2026-09-10') }, { amount_cents: 1200, fee_cents: 0, source: 'paypal', paid_at: new Date('2026-10-03') }],
     expenses: [{ amount_cents: 1000, month: '2026-09', recurring: 1 }, { amount_cents: 500, month: '2026-10', recurring: 0 }],
     usage: [
       { month: '2026-10', app: 'mathema', provider: 'anthropic', model: 'claude-sonnet-5-5', user_id: 1, email: 'a@x.co', calls: 4, failed: 1, cost: 0.12, input: 8000, output: 4000, unpriced: 0 },
@@ -81,8 +82,13 @@ describe('finance maths', () => {
     expect(f.unpricedCalls).toBe(2)
     const oct = f.months.at(-1)
     expect(oct.expenses).toBe(15) // recurring 10 + one-off 5
-    expect(oct.revenue).toBe(12)
-    expect(f.kpis.estimatedMonthlyMargin).toBeCloseTo(22 - 0.12 - 15, 2)
+    expect(oct.revenue).toBe(24) // two October payments
+    expect(oct.fees).toBe(0.65)
+    expect(oct.profit).toBeCloseTo(24 - 0.65 - 0.12 - 15, 2) // fees are a cost
+    expect(f.kpis.feesThisMonth).toBe(0.65); expect(f.kpis.netRevenueThisMonth).toBe(23.35)
+    expect(f.kpis.paymentsWithoutFee).toBe(1) // the Oct 3 PayPal payment has no fee recorded
+    expect(f.kpis.estimatedRunRateFees).toBeCloseTo(22 * 0.05 + 2 * 0.3, 2) // from the admin's fee schedule
+    expect(f.kpis.estimatedMonthlyMargin).toBeCloseTo(22 - 0.12 - 15 - 1.7, 2)
   })
 })
 
@@ -257,6 +263,28 @@ describe.skipIf(!up)('HTTP API on MySQL', () => {
       await admin.put('/api/admin/paypal').send({ webhookId: '' })
       expect((await hook(E({ event_type: 'X' }))).status).toBe(503)
       await admin.put('/api/admin/paypal').send({ webhookId: 'WHID' })
+    })
+    it('records PayPal fees: real fee from the event, else an estimate from the admin schedule, else flagged as missing', async () => {
+      await pool.query("UPDATE subscriptions SET status='active' WHERE external_id='I-TEST123' AND status<>'active'")
+      await pool.query("DELETE FROM billing_events")
+      await pool.query("DELETE FROM payments WHERE source='paypal'")
+      const sale = (id, extra = {}) => E({ event_type: 'PAYMENT.SALE.COMPLETED', resource: { id, billing_agreement_id: 'I-TEST123', amount: { total: '12.00', currency: 'USD' }, ...extra } })
+      await hook(sale('F1'))
+      let f = (await admin.get('/api/admin/finance')).body.kpis
+      expect(f.paymentsWithoutFee).toBe(1); expect(f.feesThisMonth).toBe(0) // nothing invented
+      expect((await admin.put('/api/admin/settings').send({ paypalFeePercent: 99 })).status).toBe(400)
+      expect((await admin.put('/api/admin/settings').send({ paypalFeePercent: 5.4, paypalFeeFixedCents: 30 })).status).toBe(200)
+      await hook(sale('F2')) // no fee in the event -> estimate: 5.4% of 12.00 = 65c + 30c
+      await hook(sale('F3', { transaction_fee: { value: '0.50', currency: 'USD' } })) // real fee wins
+      const [rows] = await pool.query("SELECT fee_cents, fee_estimated FROM payments WHERE note LIKE '%F2%' OR note LIKE '%F3%' ORDER BY id")
+      expect(rows.map((r) => [r.fee_cents, r.fee_estimated])).toEqual([[95, 1], [50, 0]])
+      f = (await admin.get('/api/admin/finance')).body
+      expect(f.kpis.feesThisMonth).toBe(1.45); expect(f.kpis.netRevenueThisMonth).toBeCloseTo(f.kpis.revenueThisMonth - 1.45, 2)
+      expect(f.months.at(-1).fees).toBe(1.45)
+      expect((await admin.post('/api/admin/payments').send({ amountCents: 1000, feeCents: 59, note: 'manual' })).status).toBe(201)
+      expect((await admin.post('/api/admin/payments').send({ amountCents: 1000, feeCents: -5 })).status).toBe(400)
+      expect((await admin.put('/api/admin/settings').send({ paypalFeePercent: 0, paypalFeeFixedCents: 0 })).status).toBe(200)
+      await pool.query("UPDATE subscriptions SET status='canceled' WHERE external_id='I-TEST123'") // leave state as the next test expects
     })
     it('lets a customer cancel their PayPal subscription', async () => {
       pp.status = 'ACTIVE'

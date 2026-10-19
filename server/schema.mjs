@@ -155,6 +155,8 @@ export const COLUMNS = [
   ['plans', 'paypal_plan_id', 'VARCHAR(64) NULL'],
   ['subscriptions', 'external_id', 'VARCHAR(64) NULL'],
   ['users', 'terms_accepted_at', 'DATETIME NULL'],
+  ['payments', 'fee_cents', 'INT NOT NULL DEFAULT 0'],
+  ['payments', 'fee_estimated', 'TINYINT(1) NOT NULL DEFAULT 0'],
 ]
 export const STATUS_ENUM = "ALTER TABLE subscriptions MODIFY status ENUM('pending','active','trialing','past_due','canceled') NOT NULL DEFAULT 'active'"
 export const DEFAULT_SETTINGS = {
@@ -165,6 +167,8 @@ export const DEFAULT_SETTINGS = {
   paypal_mode: 'sandbox',
   paypal_client_id: '',
   paypal_webhook_id: '',
+  paypal_fee_percent: 0, // estimate used only when PayPal does not report the real fee; enter it from YOUR PayPal fee schedule
+  paypal_fee_fixed_cents: 0,
   legal_entity: '',
   legal_email: '',
   daily_cap_per_user: 25,
