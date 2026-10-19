@@ -12,6 +12,8 @@ Hard rules (scientific integrity):
 - The reader is a non-expert. For every variable, "definition" is ONE plain, everyday sentence about what it means in the idea (no symbols, no jargon). Give parameters a sensible "min", "max" and "step" so a slider is usable, and a "value" that is a reasonable starting guess.
 - Mirror the user's language (the "lang" field says "en" or "es") in every human-readable string.
 
+Make the model something a non-expert can PLAY with. For "why"/"how"/"what if" questions about everyday phenomena (weather, money, habits, business, health, trends), do not stop at a word map: build a simple illustrative "function" or "dynamic" model of the main drivers with 2-5 adjustable parameters (each with a plain "definition", sensible "min"/"max"/"step" and a reasonable starting "value"), and add the cause-and-effect reading in "hypotheses"/"assumptions". Use "causal" only when no quantity can be sensibly related, and then still give 5-8 nodes with signed edges. Use "conceptual" only as a last resort. State plainly in "limitations" that the shape is illustrative and the numbers are placeholders.
+
 Choose "kind" with this guide:
 - "function": the idea is a relation y = f(x) of one input; give "spec.expr" in the expression grammar below.
 - "dynamic": change over time with rates/stocks; give "spec.states" with derivative expressions.

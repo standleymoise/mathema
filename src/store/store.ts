@@ -308,6 +308,7 @@ export async function sendMessage(text: string, files: AttachedFile[] = []) {
     const deterministic = datasets.length > 0 || local.draft.kind === 'regression' || local.draft.kind === 'function'
     let analysis = local
     let aiNote = ''
+    let aiFailed = false
     if (deterministic) {
       if (state.server.user && state.server.aiAvailable) aiNote = L('Deterministic path (explicit equation or data table): no AI call was needed.', 'Camino determinista (ecuación explícita o tabla de datos): no hizo falta llamar a la IA.')
     } else if (state.server.user && state.server.aiAvailable) {
@@ -326,6 +327,8 @@ export async function sendMessage(text: string, files: AttachedFile[] = []) {
           : L(`AI unavailable (${u?.message ?? 'error'})`, `IA no disponible (${u?.message ?? 'error'})`)
         aiNote = L(`Used the local heuristic analyzer instead: ${why}.`, `Se usó el analizador heurístico local: ${why}.`)
         analysis = local
+        aiFailed = true
+        toast(L(`The AI could not answer (${why}). Showing a basic draft only.`, `La IA no pudo responder (${why}). Se muestra solo un borrador básico.`), 'warn')
       }
     } else if (state.server.available && !state.server.user) {
       aiNote = L('Tip: sign in to use the AI model for ideas without equations or data.', 'Tip: iniciá sesión para usar el modelo de IA con ideas sin ecuaciones ni datos.')
@@ -337,6 +340,13 @@ export async function sendMessage(text: string, files: AttachedFile[] = []) {
     const pending = related.some((p) => p.suggestion === 'new-version')
     const intro = L(`I read this as a **${draft.kind}** problem about ${analysis.topic}. Central question: ${analysis.centralQuestion}`, `Lo leí como un problema de tipo **${draft.kind}** sobre ${analysis.topic}. Pregunta central: ${analysis.centralQuestion}`) + (aiNote ? `\n\n${aiNote}` : '')
 
+    // A bare word map from the local heuristic is not a useful model for a vague question: do not save it silently.
+    const weak = analysis === local && !deterministic && draft.kind === 'conceptual'
+    if (mode === 'model' && !pending && weak) {
+      const why = aiFailed ? '' : state.server.available && !state.server.user ? '' : L('\n\nThis needs the AI model to propose real factors you can play with, and it is not available here.', '\n\nPara proponer factores reales con los que jugar hace falta el modelo de IA, y no está disponible acá.')
+      pushMessage(convId, { ...base, text: intro + why + '\n\n' + L('All I could extract without AI is a loose word map, so I did not save it. You can still keep it, or rephrase with a formula, numbers, or a data table (those work without AI).', 'Sin IA solo pude extraer un mapa suelto de palabras, así que no lo guardé. Podés conservarlo igual, o reformular con una fórmula, números o una tabla de datos (eso funciona sin IA).'), formalization: analysis.formalization, pendingDraft: draft, engine: analysis.engine })
+      return
+    }
     const lim = modelLimitReached()
     if (mode === 'model' && !pending && lim.reached) {
       pushMessage(convId, { ...base, text: intro + '\n\n' + limitMessage(lim.limit!), formalization: analysis.formalization, pendingDraft: draft, engine: analysis.engine })
