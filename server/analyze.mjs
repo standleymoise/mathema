@@ -67,7 +67,9 @@ export function analyzeRoutes(pool, cfg, deps = {}) {
     } catch (e) {
       const status = e instanceof ProviderError ? e.status : 502
       await record(pick.provider, pick.model, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, { ok: false, error: String(e.message).slice(0, 250) })
-      return res.status(status).json({ error: 'provider_error', detail: detailFor(req, e instanceof ProviderError ? e.message : 'The AI provider failed', status === 429 ? 'The AI service is busy. Please try again in a moment.' : GENERIC.ai) })
+      console.error(`[mathema] AI provider error (${pick.provider}/${pick.model}): ${String(e.message).slice(0, 250)}`)
+      // Never sent to anyone in the browser, admins included: it is stored in usage_log and shown under Admin → AI & keys.
+      return res.status(status === 429 ? 429 : 502).json({ error: 'provider_error', detail: status === 429 ? 'The AI service is busy. Please try again in a moment.' : GENERIC.ai })
     }
     // The call succeeded and was billed; record it before parsing so cost is never lost.
     const row = await record(pick.provider, pick.model, result.usage)

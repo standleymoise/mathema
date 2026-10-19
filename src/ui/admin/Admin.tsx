@@ -169,6 +169,7 @@ function ModelEditor({ m, lang, reload }: { m: ModelRow; lang: 'en' | 'es'; relo
 
 function AiTab({ lang }: { lang: 'en' | 'es' }) {
   const L = (en: string, es: string) => tr(lang, en, es)
+  const aiErrors = useAdmin<{ provider: string; model: string; error: string | null; createdAt: string }[]>('ai-errors')
   const keys = useAdmin<KeyS[]>('keys'), models = useAdmin<ModelRow[]>('models'), settings = useAdmin<Settings>('settings')
   const [nm, setNm] = useState({ provider: 'openai', model: '', inputPerMtok: '', outputPerMtok: '' })
   const [st, setSt] = useState<Settings | null>(null)
@@ -179,6 +180,13 @@ function AiTab({ lang }: { lang: 'en' | 'es' }) {
   return (
     <div className="grid min-w-0 grid-cols-1 gap-4">
       <p className="text-[13px] text-mute">{L('Keys are encrypted with AES-256-GCM before they reach MySQL and are never sent back to any browser. An environment variable (ANTHROPIC_API_KEY / OPENAI_API_KEY) is used only if no key is saved here.', 'Las claves se cifran con AES-256-GCM antes de llegar a MySQL y nunca vuelven a ningún navegador. Una variable de entorno (ANTHROPIC_API_KEY / OPENAI_API_KEY) se usa solo si aquí no hay clave guardada.')}</p>
+      {(aiErrors.data?.length ?? 0) > 0 && (
+        <div role="alert" className="rounded-xl border border-bad/40 bg-[rgb(var(--bad)/.08)] p-4 text-[13px]">
+          <b className="text-bad">{L(`${aiErrors.data!.length} failed AI call(s) in the last 24 h`, `${aiErrors.data!.length} llamada(s) de IA fallidas en las últimas 24 h`)}</b>
+          {aiErrors.data!.some((x) => /credit balance|billing|insufficient/i.test(x.error ?? '')) && <p className="mt-1">{L('Your provider says the credit balance is too low. Add credits in the provider’s Plans & Billing page. Users only see “AI temporarily unavailable” and get a basic draft meanwhile.', 'Tu proveedor indica que el saldo de crédito es insuficiente. Agregá crédito en Plans & Billing del proveedor. Los usuarios solo ven “IA no disponible por ahora” y reciben un borrador básico mientras tanto.')}</p>}
+          <ul className="mt-2 space-y-1 text-mute">{aiErrors.data!.slice(0, 3).map((x, i) => <li key={i} className="break-words"><span className="font-mono text-[11px]">{new Date(x.createdAt).toLocaleString()} · {x.provider}/{x.model}</span><br />{x.error}</li>)}</ul>
+        </div>
+      )}
       <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">{(keys.data ?? []).map((k) => <KeyCard key={k.provider} k={k} lang={lang} reload={keys.reload} />)}</div>
 
       <div className={card}><Label>{L('Models and prices (USD per million tokens)', 'Modelos y precios (USD por millón de tokens)')}</Label>

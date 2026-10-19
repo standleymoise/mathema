@@ -48,6 +48,11 @@ export function adminRoutes(pool, cfg) {
   })
 
   // ---- models, prices, routing settings ----
+  // Recent failed provider calls (e.g. exhausted credits). Technical detail lives here, for the admin only.
+  r.get('/ai-errors', async (_req, res) => {
+    const [rows] = await pool.query("SELECT provider, model, error, created_at createdAt FROM usage_log WHERE ok=0 AND created_at > ? ORDER BY id DESC LIMIT 10", [new Date(Date.now() - 24 * 3600 * 1000)])
+    res.json(rows)
+  })
   r.get('/models', async (_req, res) => { const [rows] = await pool.query('SELECT provider,model,label,input_per_mtok inputPerMtok,output_per_mtok outputPerMtok,enabled FROM model_prices ORDER BY provider,model'); res.json(rows.map((x) => ({ ...x, enabled: !!x.enabled }))) })
   r.put('/models', async (req, res) => {
     const { provider, model, label = '', enabled = true } = req.body ?? {}

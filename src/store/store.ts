@@ -323,8 +323,8 @@ export async function sendMessage(text: string, files: AttachedFile[] = []) {
         const why = u?.code === 'quota_exceeded' ? L(`monthly AI quota reached (${u.extra.used}/${u.extra.quota}); see Plans in the sidebar to get more`, `cuota mensual de IA alcanzada (${u.extra.used}/${u.extra.quota}); mirá Planes en la barra lateral para tener más`)
           : u?.code === 'input_too_long' ? L(`idea too long for AI on your plan (max ${u.extra.max} characters)`, `idea demasiado larga para la IA en tu plan (máx. ${u.extra.max} caracteres)`)
           : u?.code === 'daily_cap_reached' ? L('daily AI limit reached', 'límite diario de IA alcanzado')
-          : u?.code === 'rejected_by_engine' ? L(`the AI proposal failed validation (${u.message})`, `la propuesta de la IA no pasó la validación (${u.message})`)
-          : L(`AI unavailable (${u?.message ?? 'error'})`, `IA no disponible (${u?.message ?? 'error'})`)
+          : u?.code === 'rejected_by_engine' ? L('the AI answer could not be validated', 'no se pudo validar la respuesta de la IA')
+          : L('the AI service is temporarily unavailable', 'el servicio de IA no está disponible por ahora')
         aiNote = L(`Used the local heuristic analyzer instead: ${why}.`, `Se usó el analizador heurístico local: ${why}.`)
         analysis = local
         aiFailed = true

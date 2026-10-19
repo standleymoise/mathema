@@ -171,7 +171,7 @@ describe.skipIf(!up)('HTTP API on MySQL', () => {
     expect(q.status).toBe(402); expect(q.body.error).toBe('quota_exceeded')
     expect((await user.post('/api/analyze').send({ text: 'x'.repeat(13000) })).status).toBe(413)
   })
-  it('hides technical provider errors from users but shows them to the admin', async () => {
+  it('never sends provider errors to the browser; admin reads them in the panel', async () => {
     const boom = async () => { throw Object.assign(new Error('secret upstream detail sk-xyz'), { status: 500 }) }
     const a2 = createApp(pool, cfg, { call: { anthropic: boom, openai: boom } })
     await pool.query("UPDATE plans SET ai_monthly_quota=100 WHERE id='free'")
@@ -181,7 +181,9 @@ describe.skipIf(!up)('HTTP API on MySQL', () => {
     const ra = await ad.post('/api/analyze').send({ text: 'Rain raises yield.', lang: 'en', mode: 'model' })
     const ru = await u.post('/api/analyze').send({ text: 'Rain raises yield.', lang: 'en', mode: 'model' })
     expect(JSON.stringify(ru.body)).not.toContain('secret upstream')
-    expect(ru.body.detail).toMatch(/temporarily unavailable/); expect(ra.body.detail).not.toMatch(/temporarily unavailable/)
+    expect(JSON.stringify(ra.body)).not.toContain('secret upstream'); expect(ru.body.detail).toMatch(/temporarily unavailable/)
+    const errs = await ad.get('/api/admin/ai-errors'); expect(errs.status).toBe(200); expect(JSON.stringify(errs.body)).toContain('secret upstream')
+    expect((await u.get('/api/admin/ai-errors')).status).toBe(403)
   })
   it('hides health diagnostics in production unless opted in', async () => {
     const st = { ready: false, problems: ['MySQL error ER_ACCESS_DENIED_ERROR'] }
