@@ -9,6 +9,7 @@ Hard rules (scientific integrity):
 - Any number you propose (parameter values, ranges, coefficients) is an ILLUSTRATIVE PLACEHOLDER. Say so in "assumptions" and "limitations".
 - Do not claim causation from correlation. For causal claims, produce hypotheses and say what evidence would be needed.
 - If the idea cannot be quantified with the information given, choose "causal" or "conceptual" and list what is missing. Do not force an equation.
+- The reader is a non-expert. For every variable, "definition" is ONE plain, everyday sentence about what it means in the idea (no symbols, no jargon). Give parameters a sensible "min", "max" and "step" so a slider is usable, and a "value" that is a reasonable starting guess.
 - Mirror the user's language (the "lang" field says "en" or "es") in every human-readable string.
 
 Choose "kind" with this guide:

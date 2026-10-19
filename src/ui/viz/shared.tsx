@@ -4,7 +4,8 @@ import type { MathModel, Scenario } from '../../core/types'
 import { adjustable, metric, type Params } from '../../core/engine/runtime'
 import { compile, toLatex } from '../../core/engine/expr'
 import { Btn, Eq, IconBtn, Label, ProvBadge, cx } from '../common'
-import { models, useT } from '../../store/store'
+import { models, useStore, useT } from '../../store/store'
+import { tr } from '../../core/text'
 
 export const SERIES = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)', 'var(--s5)']
 export const fmt = (n: number, d = 3) => (Number.isFinite(n) ? (Math.abs(n) >= 1000 ? n.toFixed(0) : +n.toPrecision(d + 1)).toString() : '—')
@@ -19,16 +20,27 @@ export function ChartFrame({ children, title, caption }: { children: React.React
   )
 }
 
+const ADV_KEY = 'mathema:advancedParams'
+const readAdv = () => { try { return localStorage.getItem(ADV_KEY) === '1' } catch { return false } }
+
 export function ParamControls({ model, params, base, onChange, onReset }: { model: MathModel; params: Params; base: Params; onChange: (k: string, v: number) => void; onReset: () => void }) {
   const t = useT()
+  const lang = useStore((s) => s.ui.lang)
+  const [adv, setAdv] = useState(readAdv)
   const vars = adjustable(model)
   if (!vars.length) return null
+  const toggle = () => { setAdv(!adv); try { localStorage.setItem(ADV_KEY, adv ? '0' : '1') } catch { /* storage blocked */ } }
+  const guessed = vars.some((v) => v.provenance === 'system-hypothesis' || v.provenance === 'user-assumption')
   return (
     <section aria-label={t('parameters')} className="rounded-xl border border-line bg-surface p-4">
       <div className="mb-1 flex items-center justify-between">
         <Label>{t('parameters')}</Label>
-        <Btn size="sm" variant="ghost" onClick={onReset}><RotateCcw size={14} />{t('reset')}</Btn>
+        <div className="flex items-center">
+          <Btn size="sm" variant="ghost" onClick={toggle} aria-pressed={adv}>{adv ? tr(lang, 'Simple view', 'Vista simple') : tr(lang, 'Advanced view', 'Vista avanzada')}</Btn>
+          <Btn size="sm" variant="ghost" onClick={onReset}><RotateCcw size={14} />{t('reset')}</Btn>
+        </div>
       </div>
+      {guessed && <p className="mb-1 text-xs text-mute">{tr(lang, 'Starting values are assumptions, not measurements. Drag the sliders and watch what changes; “Reset” brings back the starting values.', 'Los valores iniciales son supuestos, no mediciones. Mové los controles y mirá qué cambia; «Restablecer» vuelve a los valores iniciales.')}</p>}
       <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
         {vars.map((v) => {
           const val = params[v.symbol] ?? v.value!
@@ -36,16 +48,19 @@ export function ParamControls({ model, params, base, onChange, onReset }: { mode
           return (
             <div key={v.id} className="py-1.5">
               <div className="flex items-baseline justify-between gap-2">
-                <label htmlFor={`p_${v.id}`} className="text-[13px]"><span className="font-medium">{v.name}</span> <span className="font-mono text-[11px] text-mute">{v.symbol}</span></label>
-                <div className="flex items-center gap-1">
-                  <input aria-label={`${v.name} value`} type="number" inputMode="decimal" value={val} min={min} max={max} step={step}
-                    onChange={(e) => { const n = parseFloat(e.target.value); if (Number.isFinite(n)) onChange(v.symbol, n) }}
-                    className={cx('h-7 w-[72px] rounded-md border bg-bg px-1.5 text-right font-mono text-xs outline-none focus:border-accent', val !== base[v.symbol] ? 'border-accent' : 'border-line')} />
-                  <span className="w-10 truncate text-[11px] text-mute">{v.unit}</span>
-                </div>
+                <label htmlFor={`p_${v.id}`} className="text-[13px]"><span className="font-medium">{v.name}</span>{adv && <> <span className="font-mono text-[11px] text-mute">{v.symbol}</span></>}</label>
+                {adv ? (
+                  <div className="flex items-center gap-1">
+                    <input aria-label={`${v.name} value`} type="number" inputMode="decimal" value={val} min={min} max={max} step={step}
+                      onChange={(e) => { const n = parseFloat(e.target.value); if (Number.isFinite(n)) onChange(v.symbol, n) }}
+                      className={cx('h-7 w-[72px] rounded-md border bg-bg px-1.5 text-right font-mono text-xs outline-none focus:border-accent', val !== base[v.symbol] ? 'border-accent' : 'border-line')} />
+                    <span className="w-10 truncate text-[11px] text-mute">{v.unit}</span>
+                  </div>
+                ) : <span className={cx('font-mono text-xs', val !== base[v.symbol] && 'text-accent')}>{fmt(val)} <span className="text-[11px] text-mute">{v.unit}</span></span>}
               </div>
+              {v.definition && <p className="mt-0.5 text-[11.5px] leading-snug text-mute">{v.definition}</p>}
               <input id={`p_${v.id}`} type="range" min={min} max={max} step={step} value={val} onChange={(e) => onChange(v.symbol, parseFloat(e.target.value))} aria-valuetext={`${val} ${v.unit}`} />
-              <div className="-mt-1 flex items-center justify-between text-[10.5px] text-mute"><span>{min}</span><ProvBadge p={v.provenance} /><span>{max}</span></div>
+              <div className="-mt-1 flex items-center justify-between text-[10.5px] text-mute"><span>{min}</span>{adv && <ProvBadge p={v.provenance} />}<span>{max}</span></div>
             </div>
           )
         })}

@@ -10,6 +10,7 @@ import { parseTable, type Dataset } from '../core/analyzer'
 import { findRelated } from '../core/memory'
 import { explainModel, researchNotes } from '../core/assist'
 import { baseParams, sensitivity } from '../core/engine/runtime'
+import { exampleModel } from '../core/examples'
 import { now, tr, uid } from '../core/text'
 import { translate, type Key } from '../i18n'
 
@@ -148,6 +149,15 @@ export const models = {
     const clean = title.trim()
     if (!clean) return
     setDB((db) => ({ ...db, models: db.models.map((m) => (m.id === id ? { ...m, title: clean, updatedAt: now() } : m)) }))
+  },
+  /** Opens a gallery example, adding it to the library first when it is not there yet. Demos never count against plan limits. */
+  openExample(id: string) {
+    if (!getModel(id)) {
+      const m = exampleModel(id, state.ui.lang)
+      if (!m) return
+      setDB((db) => ({ ...db, models: [...db.models, m] }))
+    }
+    ui.selectModel(id, { workspace: true })
   },
   duplicate(id: string) {
     const m = getModel(id)
