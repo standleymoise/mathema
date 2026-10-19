@@ -81,13 +81,26 @@ export function SettingsView() {
             <Row k=""><div className="flex flex-wrap gap-2"><Btn variant="outline" size="sm" onClick={() => ui.setView('pricing')}>{tr(s.lang, 'Plans', 'Planes')}</Btn><Btn variant="outline" size="sm" onClick={() => { setFormErr(null); setPwOpen(true) }}>{tr(s.lang, 'Change password', 'Cambiar contraseña')}</Btn><Btn variant="outline" size="sm" onClick={records.exportJson}>{tr(s.lang, 'Download my data', 'Descargar mis datos')}</Btn><Btn variant="outline" size="sm" onClick={() => void server.logout()}>{tr(s.lang, 'Sign out', 'Cerrar sesión')}</Btn><Btn variant="ghost" size="sm" className="text-bad" onClick={() => { setFormErr(null); setDelOpen(true) }}>{tr(s.lang, 'Delete my account', 'Eliminar mi cuenta')}</Btn></div></Row></>
           : <Row k={tr(s.lang, 'Not signed in', 'Sin sesión')}><Btn variant="primary" size="sm" onClick={() => ui.setAuthOpen(true)}>{tr(s.lang, 'Sign in / create account', 'Iniciar sesión / crear cuenta')}</Btn></Row>}
       </section>
-      <h2 className="serif mb-2 mt-8 text-xl">{tr(s.lang, 'System status', 'Estado del sistema')}</h2>
-      <section className="rounded-xl border border-line bg-surface px-4 text-sm">
-        <Row k={t('aiStatus')}><span className="text-right text-mute">{!srv.available ? t('localAnalyzer') : srv.aiAvailable ? tr(s.lang, 'AI via the MATHEMA server (keys are held by the admin, never in the browser). Equations and data tables are still solved deterministically.', 'IA vía el servidor de MATHEMA (las claves las guarda el admin, nunca el navegador). Las ecuaciones y tablas de datos se siguen resolviendo de forma determinista.') : tr(s.lang, 'Server without an AI key configured — local heuristic analyzer in use.', 'Servidor sin clave de IA configurada — se usa el analizador heurístico local.')}</span></Row>
-        <Row k={t('persistence')}><span className="text-right text-mute">{srv.user ? tr(s.lang, 'MySQL (your account) + local cache', 'MySQL (tu cuenta) + caché local') : repository.label}</span></Row>
-        <Row k={tr(s.lang, 'Voice dictation', 'Dictado por voz')}><span className="text-right text-mute">{('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) ? tr(s.lang, 'Available (browser will ask for microphone permission)', 'Disponible (el navegador pedirá permiso de micrófono)') : tr(s.lang, 'Not supported by this browser', 'No soportado por este navegador')}</span></Row>
-      </section>
-      <p className="mt-3 text-xs leading-relaxed text-mute">{tr(s.lang, 'No API key is ever stored in the browser. Keys are managed by the admin on the server.', 'Nunca se guarda una clave de API en el navegador. Las claves las gestiona el admin en el servidor.')}</p>
+      {/* Infrastructure details (database, where AI comes from) are for the admin only; regular users get plain-language status. */}
+      {(srv.user?.role === 'admin' || !srv.available) ? (
+        <>
+          <h2 className="serif mb-2 mt-8 text-xl">{tr(s.lang, 'System status', 'Estado del sistema')}</h2>
+          <section className="rounded-xl border border-line bg-surface px-4 text-sm">
+            <Row k={t('aiStatus')}><span className="text-right text-mute">{!srv.available ? t('localAnalyzer') : srv.aiAvailable ? tr(s.lang, 'AI via the MATHEMA server (keys are held by the admin, never in the browser). Equations and data tables are still solved deterministically.', 'IA vía el servidor de MATHEMA (las claves las guarda el admin, nunca el navegador). Las ecuaciones y tablas de datos se siguen resolviendo de forma determinista.') : tr(s.lang, 'Server without an AI key configured — local heuristic analyzer in use.', 'Servidor sin clave de IA configurada — se usa el analizador heurístico local.')}</span></Row>
+            <Row k={t('persistence')}><span className="text-right text-mute">{srv.user ? tr(s.lang, 'MySQL (your account) + local cache', 'MySQL (tu cuenta) + caché local') : repository.label}</span></Row>
+            <Row k={tr(s.lang, 'Voice dictation', 'Dictado por voz')}><span className="text-right text-mute">{('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) ? tr(s.lang, 'Available (browser will ask for microphone permission)', 'Disponible (el navegador pedirá permiso de micrófono)') : tr(s.lang, 'Not supported by this browser', 'No soportado por este navegador')}</span></Row>
+          </section>
+          <p className="mt-3 text-xs leading-relaxed text-mute">{tr(s.lang, 'No API key is ever stored in the browser. Keys are managed by the admin on the server.', 'Nunca se guarda una clave de API en el navegador. Las claves las gestiona el admin en el servidor.')}</p>
+        </>
+      ) : (
+        <>
+          <h2 className="serif mb-2 mt-8 text-xl">{tr(s.lang, 'Features', 'Funciones')}</h2>
+          <section className="rounded-xl border border-line bg-surface px-4 text-sm">
+            <Row k={tr(s.lang, 'AI-assisted analysis', 'Análisis asistido por IA')}><span className="text-right text-mute">{srv.aiAvailable ? tr(s.lang, 'Available', 'Disponible') : tr(s.lang, 'Not available right now — the built-in analyzer is used', 'No disponible por ahora — se usa el analizador integrado')}</span></Row>
+            <Row k={tr(s.lang, 'Voice dictation', 'Dictado por voz')}><span className="text-right text-mute">{('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) ? tr(s.lang, 'Available (your browser will ask for microphone permission)', 'Disponible (tu navegador pedirá permiso de micrófono)') : tr(s.lang, 'Not supported by this browser', 'No soportado por este navegador')}</span></Row>
+          </section>
+        </>
+      )}
       <h2 className="serif mb-2 mt-8 text-xl">{t('demoMode')}</h2>
       <div className="flex flex-wrap gap-2">
         <Btn variant="outline" onClick={records.exportJson}><Download size={15} />{t('exportJson')}</Btn>

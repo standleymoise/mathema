@@ -8,6 +8,7 @@ import { SYSTEM_PROMPT, userPrompt } from './ai/prompt.mjs'
 import { extractJson, validateProposal, ProposalError } from './ai/proposal.mjs'
 import { computeCost } from './ai/cost.mjs'
 import { featuresFor } from './features.mjs'
+import { detailFor, GENERIC } from './errors.mjs'
 
 const MODES = new Set(['understand', 'model', 'experiment', 'research', 'connect'])
 const monthStart = (d = new Date()) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1))
@@ -39,7 +40,7 @@ export function analyzeRoutes(pool, cfg, deps = {}) {
     const downgraded = mode === 'research' && !features.researchPremium
     const pick = await getSetting(pool, research ? 'ai_research' : 'ai_default')
     const [prices] = await pool.query('SELECT * FROM model_prices WHERE provider=? AND model=? AND enabled=1', [pick.provider, pick.model])
-    if (!prices.length) return res.status(503).json({ error: 'model_not_enabled', detail: `${pick.provider}/${pick.model} is not enabled in the admin panel` })
+    if (!prices.length) { console.error(`[mathema] ${pick.provider}/${pick.model} is not enabled in Admin → AI & keys`); return res.status(503).json({ error: 'model_not_enabled', detail: detailFor(req, `${pick.provider}/${pick.model} is not enabled in the admin panel`, GENERIC.ai) }) }
     const apiKey = await getApiKey(pool, cfg, pick.provider)
     if (!apiKey) return res.status(503).json({ error: 'ai_not_configured' })
 
@@ -66,7 +67,7 @@ export function analyzeRoutes(pool, cfg, deps = {}) {
     } catch (e) {
       const status = e instanceof ProviderError ? e.status : 502
       await record(pick.provider, pick.model, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, { ok: false, error: String(e.message).slice(0, 250) })
-      return res.status(status).json({ error: 'provider_error', detail: e instanceof ProviderError ? e.message : 'The AI provider failed' })
+      return res.status(status).json({ error: 'provider_error', detail: detailFor(req, e instanceof ProviderError ? e.message : 'The AI provider failed', status === 429 ? 'The AI service is busy. Please try again in a moment.' : GENERIC.ai) })
     }
     // The call succeeded and was billed; record it before parsing so cost is never lost.
     const row = await record(pick.provider, pick.model, result.usage)
@@ -76,7 +77,7 @@ export function analyzeRoutes(pool, cfg, deps = {}) {
       res.json({ proposal, meta: { provider: pick.provider, model: pick.model, usage: result.usage, quota: { used: after.used, quota: after.quota }, downgraded } })
     } catch (e) {
       await pool.query('UPDATE usage_log SET ok=0, error=? WHERE id=?', [String(e.message).slice(0, 250), row.id])
-      res.status(502).json({ error: 'invalid_model_output', detail: e instanceof ProposalError ? e.message : 'unparseable output' })
+      res.status(502).json({ error: 'invalid_model_output', detail: detailFor(req, e instanceof ProposalError ? e.message : 'unparseable output', GENERIC.aiOutput) })
     }
   })
   return r

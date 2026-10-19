@@ -20,6 +20,8 @@ export function loadConfig(overrides = {}) {
     trustProxy: env.TRUST_PROXY !== '0',
     publicUrl: (env.PUBLIC_URL || '').replace(/\/+$/, ''),
     paypalApiBase: env.PAYPAL_API_BASE || '',
+    // Diagnostics on / and /api/health name env vars and DB error codes: hidden in production unless the admin opts in temporarily.
+    exposeHealthDetails: env.EXPOSE_HEALTH_DETAILS === '1' || env.NODE_ENV !== 'production',
     ...overrides,
   }
   if (!cfg.appSecret) {

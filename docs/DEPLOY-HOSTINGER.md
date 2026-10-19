@@ -40,7 +40,7 @@ Generate a secret: `node -e "console.log(require('crypto').randomBytes(32).toStr
 ## Troubleshooting a 503 / blank site
 The server always starts and reports what is wrong instead of crashing:
 * Open `https://YOUR-DOMAIN/` — a plain-text "MATHEMA is misconfigured" message names the missing setting (e.g. `APP_SECRET`).
-* Open `https://YOUR-DOMAIN/api/health` — `{"ok":true}` means all good; otherwise it lists the problem (e.g. `MySQL error ER_ACCESS_DENIED_ERROR`). The full error is in the app's **runtime log** in hPanel. The server retries the database every 10 s, so fixing the variables and restarting is enough.
+* Open `https://YOUR-DOMAIN/api/health` — `{"ok":true}` means all good; otherwise it reports `unavailable`. Infrastructure details (e.g. `MySQL error ER_ACCESS_DENIED_ERROR`) are hidden from the public in production: set `EXPOSE_HEALTH_DETAILS=1` temporarily to see them, then remove it. The full error is in the app's **runtime log** in hPanel. The server retries the database every 10 s, so fixing the variables and restarting is enough.
 * A bare host-level "503" with none of the above means the process is not running at all: check that *Entry file* = `server.js`, the Node version is 20 or 22, and that `npm install` completed in the build log.
 * MySQL host: use the host shown next to your database in hPanel (often `localhost`, sometimes an IP or a `mysql…hostinger` name). If `localhost` fails, try `127.0.0.1`.
 

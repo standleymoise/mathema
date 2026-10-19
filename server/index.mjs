@@ -10,7 +10,8 @@ const port = Number(process.env.PORT || 3001)
 const status = { ready: false, problems: ['Connecting to the database… (if this persists for more than ~15 s, DB_HOST/DB_PORT are probably wrong or unreachable)'] }
 
 let cfg = null
-try { cfg = loadConfig() } catch (e) { status.problems.push(String(e.message)); console.error('[mathema] CONFIG ERROR:', e.message) }
+let cfgError = ''
+try { cfg = loadConfig() } catch (e) { cfgError = String(e.message); status.problems.push(cfgError); console.error('[mathema] CONFIG ERROR:', e.message) }
 
 let app
 if (cfg) {
@@ -34,7 +35,9 @@ if (cfg) {
   void attempt()
 } else {
   app = express()
-  app.use((_req, res) => res.status(500).type('text/plain').send(`MATHEMA is misconfigured:\n- ${status.problems.join('\n- ')}\n`))
+  // without a valid config we cannot know the mode: show details only when explicitly allowed or clearly not in production
+  const showDetails = process.env.EXPOSE_HEALTH_DETAILS === '1' || process.env.NODE_ENV !== 'production'
+  app.use((_req, res) => res.status(500).type('text/plain').send(showDetails ? `MATHEMA is misconfigured:\n- ${status.problems.join('\n- ')}\n` : 'MATHEMA is temporarily unavailable. The administrator has been notified through the server log.\n'))
 }
 app.listen(port, '0.0.0.0', () => console.log(`[mathema] listening on :${port} (${process.env.NODE_ENV || 'development'})`))
 process.on('unhandledRejection', (e) => console.error('[mathema] unhandledRejection:', e))

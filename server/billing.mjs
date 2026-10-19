@@ -5,6 +5,7 @@ import { Router } from 'express'
 import { requireUser } from './auth.mjs'
 import { audit, getSetting } from './db.mjs'
 import { getApiKey } from './keys.mjs'
+import { detailFor, GENERIC } from './errors.mjs'
 
 export class PayPalError extends Error {
   constructor(msg, status = 502) { super(msg); this.status = status }
@@ -171,7 +172,7 @@ export function billingRoutes(pool, cfg) {
       res.json({ approveUrl: approve })
     } catch (e) {
       console.error('[mathema] checkout error:', e.message)
-      res.status(e instanceof PayPalError ? e.status : 502).json({ error: 'checkout_failed', detail: e.message })
+      res.status(e instanceof PayPalError ? e.status : 502).json({ error: 'checkout_failed', detail: detailFor(req, e.message, GENERIC.billing) })
     }
   })
 
@@ -201,7 +202,7 @@ export function billingRoutes(pool, cfg) {
       await endSubscription(pool, sub.external_id, 'canceled')
       await audit(pool, req.user.id, 'subscription.self_cancel', String(sub.id))
       res.json({ ok: true })
-    } catch (e) { res.status(e instanceof PayPalError ? e.status : 502).json({ error: 'cancel_failed', detail: e.message }) }
+    } catch (e) { console.error('[mathema] cancel error:', e.message); res.status(e instanceof PayPalError ? e.status : 502).json({ error: 'cancel_failed', detail: detailFor(req, e.message, GENERIC.billing) }) }
   })
 
   r.post('/paypal/webhook', async (req, res) => {
@@ -214,7 +215,7 @@ export function billingRoutes(pool, cfg) {
         transmission_sig: h('paypal-transmission-sig'), transmission_time: h('paypal-transmission-time'), webhook_id: c.webhookId, webhook_event: req.body,
       })
       if (v?.verification_status !== 'SUCCESS') return res.status(400).json({ error: 'bad_signature' })
-    } catch (e) { return res.status(502).json({ error: 'verify_failed', detail: e.message }) }
+    } catch (e) { console.error('[mathema] webhook verification failed:', e.message); return res.status(502).json({ error: 'verify_failed' }) }
     if (!req.body?.id || !req.body?.event_type) return res.status(400).json({ error: 'bad_event' })
     try { res.json({ result: await applyPaypalEvent(pool, req.body) }) }
     catch (e) { console.error('[mathema] webhook apply error:', e.message); res.status(500).json({ error: 'apply_failed' }) } // PayPal retries on non-2xx

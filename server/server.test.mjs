@@ -171,6 +171,26 @@ describe.skipIf(!up)('HTTP API on MySQL', () => {
     expect(q.status).toBe(402); expect(q.body.error).toBe('quota_exceeded')
     expect((await user.post('/api/analyze').send({ text: 'x'.repeat(13000) })).status).toBe(413)
   })
+  it('hides technical provider errors from users but shows them to the admin', async () => {
+    const boom = async () => { throw Object.assign(new Error('secret upstream detail sk-xyz'), { status: 500 }) }
+    const a2 = createApp(pool, cfg, { call: { anthropic: boom, openai: boom } })
+    await pool.query("UPDATE plans SET ai_monthly_quota=100 WHERE id='free'")
+    const u = request.agent(a2).set('X-Requested-With', 'mathema'); const ad = request.agent(a2).set('X-Requested-With', 'mathema')
+    await ad.post('/api/auth/login').send({ email: 'boss@example.com', password: 'admin-password-123' })
+    await u.post('/api/auth/login').send({ email: (await pool.query("SELECT email FROM users WHERE role='user' LIMIT 1"))[0][0].email, password: 'long-enough-pw' })
+    const ra = await ad.post('/api/analyze').send({ text: 'Rain raises yield.', lang: 'en', mode: 'model' })
+    const ru = await u.post('/api/analyze').send({ text: 'Rain raises yield.', lang: 'en', mode: 'model' })
+    expect(JSON.stringify(ru.body)).not.toContain('secret upstream')
+    expect(ru.body.detail).toMatch(/temporarily unavailable/); expect(ra.body.detail).not.toMatch(/temporarily unavailable/)
+  })
+  it('hides health diagnostics in production unless opted in', async () => {
+    const st = { ready: false, problems: ['MySQL error ER_ACCESS_DENIED_ERROR'] }
+    const hidden = createApp(pool, { ...cfg, prod: true, exposeHealthDetails: false }, { status: st })
+    const h = await request(hidden).get('/api/health')
+    expect(JSON.stringify(h.body)).not.toContain('MySQL'); expect(JSON.stringify((await request(hidden).get('/api/config')).body)).not.toContain('MySQL')
+    const shown = createApp(pool, { ...cfg, prod: true, exposeHealthDetails: true }, { status: st })
+    expect(JSON.stringify((await request(shown).get('/api/health')).body)).toContain('MySQL')
+  })
   it('routes research mode to the research model and flags models without a price', async () => {
     await admin.put('/api/admin/models').send({ provider: 'openai', model: 'my-openai-model', label: 'x', inputPerMtok: null, outputPerMtok: null })
     await admin.put('/api/admin/keys/openai').send({ key: 'sk-openai-test-key-0123456789', verify: false })

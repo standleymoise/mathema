@@ -29,11 +29,11 @@ export function createApp(pool, cfg, deps = {}) {
   const api = express.Router()
   api.get('/health', async (_req, res) => {
     const st = deps.status
-    if (st && !st.ready) return res.status(503).json({ ok: false, problems: st.problems })
+    if (st && !st.ready) return res.status(503).json(cfg.exposeHealthDetails ? { ok: false, problems: st.problems } : { ok: false, error: 'unavailable' })
     await pool.query('SELECT 1'); res.json({ ok: true })
   })
   // until the database is reachable every other API call says so instead of failing obscurely
-  api.use((_req, res, next) => (deps.status && !deps.status.ready ? res.status(503).json({ error: 'starting', problems: deps.status.problems }) : next()))
+  api.use((_req, res, next) => (deps.status && !deps.status.ready ? res.status(503).json(cfg.exposeHealthDetails ? { error: 'starting', problems: deps.status.problems } : { error: 'starting' }) : next()))
   api.use(sessionMiddleware(pool))
   api.use(csrfGuard)
   api.get('/config', async (req, res) => {
