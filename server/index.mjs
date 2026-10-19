@@ -1,14 +1,37 @@
+import express from 'express'
 import { loadConfig } from './config.mjs'
 import { createPool, migrate } from './db.mjs'
 import { createApp } from './app.mjs'
 
-const cfg = loadConfig()
-const pool = createPool(cfg.db)
-try {
-  await migrate(pool, cfg)
-} catch (e) {
-  console.error('[mathema] Could not connect/migrate MySQL:', e.message)
-  console.error('Check DB_HOST, DB_USER, DB_PASSWORD, DB_NAME.')
-  process.exit(1)
+// The process must ALWAYS start listening, even when configuration is wrong: a crash-on-start makes the
+// host answer a bare "503" with no clue. Problems are logged and reported on /api/health instead.
+const port = Number(process.env.PORT || 3001)
+const status = { ready: false, problems: [] }
+
+let cfg = null
+try { cfg = loadConfig() } catch (e) { status.problems.push(String(e.message)); console.error('[mathema] CONFIG ERROR:', e.message) }
+
+let app
+if (cfg) {
+  const pool = createPool(cfg.db)
+  app = createApp(pool, cfg, { status })
+  const attempt = async () => {
+    try {
+      await migrate(pool, cfg)
+      status.ready = true; status.problems = []
+      console.log('[mathema] database ready')
+    } catch (e) {
+      status.ready = false
+      // public message: error code only (the full text can contain the DB user name; it stays in the server log)
+      status.problems = [`MySQL error ${e.code ?? 'unknown'} (see the app's runtime log)`, 'Check DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME']
+      console.error('[mathema] DATABASE ERROR (retrying in 10 s):', e.code ?? '', e.message)
+      setTimeout(attempt, 10_000)
+    }
+  }
+  void attempt()
+} else {
+  app = express()
+  app.use((_req, res) => res.status(500).type('text/plain').send(`MATHEMA is misconfigured:\n- ${status.problems.join('\n- ')}\n`))
 }
-createApp(pool, cfg).listen(cfg.port, () => console.log(`[mathema] listening on :${cfg.port} (${cfg.prod ? 'production' : 'development'})`))
+app.listen(port, '0.0.0.0', () => console.log(`[mathema] listening on :${port} (${process.env.NODE_ENV || 'development'})`))
+process.on('unhandledRejection', (e) => console.error('[mathema] unhandledRejection:', e))

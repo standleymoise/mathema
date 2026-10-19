@@ -36,6 +36,13 @@ Set these in the app's environment settings (see `.env.example`). **Never commit
 
 Generate a secret: `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`
 
+## Troubleshooting a 503 / blank site
+The server always starts and reports what is wrong instead of crashing:
+* Open `https://YOUR-DOMAIN/` — a plain-text "MATHEMA is misconfigured" message names the missing setting (e.g. `APP_SECRET`).
+* Open `https://YOUR-DOMAIN/api/health` — `{"ok":true}` means all good; otherwise it lists the problem (e.g. `MySQL error ER_ACCESS_DENIED_ERROR`). The full error is in the app's **runtime log** in hPanel. The server retries the database every 10 s, so fixing the variables and restarting is enough.
+* A bare host-level "503" with none of the above means the process is not running at all: check that *Entry file* = `server.js`, the Node version is 20 or 22, and that `npm install` completed in the build log.
+* MySQL host: use the host shown next to your database in hPanel (often `localhost`, sometimes an IP or a `mysql…hostinger` name). If `localhost` fails, try `127.0.0.1`.
+
 ## 4. First run checklist
 1. Open the site → **Sign in** with `ADMIN_EMAIL`.
 2. **Admin → AI & keys**: paste your Anthropic and/or OpenAI key (tick "verify"). Keys are AES-256-GCM encrypted before storage and never sent back to a browser.
