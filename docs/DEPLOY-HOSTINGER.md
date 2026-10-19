@@ -15,8 +15,8 @@ hPanel → **Websites → Add website → Node.js Apps** → import the GitHub r
 
 | Setting | Value |
 |---|---|
-| Node version | 20 or 22 |
-| Install / build command | `npm install && npm run build` (the build also type-checks) |
+| Node version | 22 (20.19+ also works for the build; the test suite needs 22) |
+| Install / build command | `npm install` then `npm run build` (the host installs with `NODE_ENV=production`, so build tools are regular dependencies; type-checking runs in CI, not on the host) |
 | Start command | `npm start` |
 | Entry file | `server.js` (in the repo root; it just loads `server/index.mjs`) |
 | Framework preset | `Express.js` (or `Other`) — **not** a static/Vite preset, or the panel looks for a build output instead of the server |
