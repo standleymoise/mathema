@@ -23,7 +23,7 @@ export default function AuthModal() {
     <Modal open={open} onClose={close} title={mode === 'login' ? L('Sign in', 'Iniciar sesión') : L('Create account', 'Crear cuenta')}>
       <form onSubmit={submit} className="grid gap-3">
         {mode === 'register' && <input className={field} placeholder={L('Name (optional)', 'Nombre (opcional)')} aria-label={L('Name', 'Nombre')} value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />}
-        <input className={field} type="email" required placeholder="email@example.com" aria-label="Email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" autoFocus />
+        <input className={field} type={mode === 'register' ? 'email' : 'text'} inputMode="email" autoCapitalize="none" spellCheck={false} required placeholder={mode === 'login' ? L('Email or admin username', 'Correo o usuario admin') : 'email@example.com'} aria-label="Email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" autoFocus />
         <input className={field} type="password" required minLength={mode === 'register' ? 10 : 1} placeholder={mode === 'register' ? L('Password (10+ characters)', 'Contraseña (10+ caracteres)') : L('Password', 'Contraseña')} aria-label={L('Password', 'Contraseña')} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
         {err && <p role="alert" className="text-sm text-bad">{err}</p>}
         <Btn type="submit" variant="primary" disabled={busy}>{busy ? L('Please wait…', 'Un momento…') : mode === 'login' ? L('Sign in', 'Entrar') : L('Create account', 'Crear cuenta')}</Btn>
