@@ -3,11 +3,15 @@ import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react'
 import type { GraphSpec, MathModel } from '../../core/types'
 import { propagateSigns } from '../../core/engine/runtime'
 import { Btn, Label, cx } from '../common'
-import { uid } from '../../core/text'
+import { tr, uid } from '../../core/text'
+import { useStore } from '../../store/store'
 import type { Working } from '../models/working'
 
 const W = 640, H = 340
 export default function GraphView({ model, w }: { model: MathModel; w: Working }) {
+  const lang = useStore((st) => st.ui.lang)
+  const L = (en: string, es: string) => tr(lang, en, es)
+  const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1)
   const spec = (w.spec.kind === 'causal' || w.spec.kind === 'conceptual' ? w.spec : model.spec) as GraphSpec
   const [sel, setSel] = useState<string | null>(null)
   const [dir, setDir] = useState<1 | -1>(1)
@@ -31,12 +35,12 @@ export default function GraphView({ model, w }: { model: MathModel; w: Working }
     <div className="grid min-w-0 grid-cols-1 gap-4">
       <section className="rounded-xl border border-line bg-surface p-3 sm:p-4">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <Label>{spec.kind === 'causal' ? 'Causal hypotheses (signed)' : 'Concept map'}</Label>
+          <Label>{spec.kind === 'causal' ? L('What influences what', 'Qué influye en qué') : L('Concept map', 'Mapa de conceptos')}</Label>
           {spec.kind === 'causal' && sel && (
             <div className="-mt-1 flex items-center gap-1 text-[13px]">
-              <span className="text-mute">If “{node(sel)?.label}” goes</span>
-              <Btn size="sm" variant={dir === 1 ? 'primary' : 'outline'} onClick={() => setDir(1)} aria-pressed={dir === 1}><ArrowUp size={14} />up</Btn>
-              <Btn size="sm" variant={dir === -1 ? 'primary' : 'outline'} onClick={() => setDir(-1)} aria-pressed={dir === -1}><ArrowDown size={14} />down</Btn>
+              <span className="text-mute">{L('If', 'Si')} “{cap(node(sel)?.label ?? '')}” {L('goes', 'sube/baja:')}</span>
+              <Btn size="sm" variant={dir === 1 ? 'primary' : 'outline'} onClick={() => setDir(1)} aria-pressed={dir === 1}><ArrowUp size={14} />{L('up', 'sube')}</Btn>
+              <Btn size="sm" variant={dir === -1 ? 'primary' : 'outline'} onClick={() => setDir(-1)} aria-pressed={dir === -1}><ArrowDown size={14} />{L('down', 'baja')}</Btn>
             </div>
           )}
         </div>
@@ -62,7 +66,7 @@ export default function GraphView({ model, w }: { model: MathModel; w: Working }
           })}
           {spec.nodes.map((n) => {
             const c = effColor(n.id)
-            const label = n.label.length > 20 ? n.label.slice(0, 19) + '…' : n.label
+            const label = cap(n.label.length > 20 ? n.label.slice(0, 19) + '…' : n.label)
             return (
               <g key={n.id} transform={`translate(${n.x} ${n.y})`} className="cursor-grab active:cursor-grabbing" tabIndex={0} role="button" aria-pressed={sel === n.id} aria-label={`${n.label}${eff && eff[n.id] !== undefined ? `, effect ${String(eff[n.id])}` : ''}`}
                 onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), setSel(sel === n.id ? null : n.id))}
@@ -75,18 +79,29 @@ export default function GraphView({ model, w }: { model: MathModel; w: Working }
             )
           })}
         </svg>
-        {eff && <p className="mt-2 text-xs text-mute" aria-live="polite">Qualitative propagation along the signed edges. “?” = opposing paths or an edge with unknown sign: the model cannot say. This is bookkeeping of assumptions, not a prediction.</p>}
-        {!eff && spec.kind === 'causal' && <p className="mt-2 text-xs text-mute">Tip: select a node to trace its assumed downstream effects. Dashed edge = sign unknown.</p>}
+        {eff && <p className="mt-2 text-xs text-mute" aria-live="polite">{L('Arrows next to the boxes show what would go up (↑) or down (↓) if the selected factor changed. “?” means opposing effects, so the model cannot say. This follows the assumptions above; it is not a prediction.', 'Las flechas junto a los recuadros muestran qué subiría (↑) o bajaría (↓) si cambia el factor elegido. «?» significa efectos opuestos: el modelo no puede decirlo. Sigue los supuestos de arriba; no es una predicción.')}</p>}
+        {!eff && spec.kind === 'causal' && <p className="mt-2 text-xs text-mute">{L('Tap a factor to see what would change if it goes up or down.', 'Tocá un factor para ver qué cambiaría si sube o baja.')}</p>}
         {edgeSel && (() => { const e = spec.edges.find((x) => x.id === edgeSel); return e ? (
           <div className="mt-3 flex items-start justify-between gap-3 rounded-lg bg-sunk p-3 text-[13px]"><div><b>{node(e.from)?.label} → {node(e.to)?.label}</b> <span className="text-mute">({sg(e.sign)})</span><div className="mt-0.5 text-mute">{e.note}</div></div>
-            <Btn size="sm" variant="ghost" onClick={() => { setS({ ...spec, edges: spec.edges.filter((x) => x.id !== e.id) }); setEdgeSel(null) }}><Trash2 size={14} />Remove</Btn></div>) : null })()}
+            <Btn size="sm" variant="ghost" onClick={() => { setS({ ...spec, edges: spec.edges.filter((x) => x.id !== e.id) }); setEdgeSel(null) }}><Trash2 size={14} />{L('Remove', 'Quitar')}</Btn></div>) : null })()}
       </section>
 
+      {spec.kind === 'causal' && (
+        <section className="rounded-xl border border-line bg-surface p-4">
+          <Label>{L('How to read this', 'Cómo leer esto')}</Label>
+          <p className="mb-2 text-[13px] text-mute">{L('Each box is a factor. An arrow means “influences”: + raises the next factor, − lowers it, ? is unknown. These are the claims in your idea, not proven facts.', 'Cada recuadro es un factor. Una flecha significa «influye en»: + sube el siguiente factor, − lo baja, ? no se sabe. Son las afirmaciones de tu idea, no hechos comprobados.')}</p>
+          <ul className="space-y-1 text-[13px]">
+            {spec.edges.map((e) => (
+              <li key={e.id}>{e.sign === 1 ? L('More', 'Más') : e.sign === -1 ? L('More', 'Más') : L('Changes in', 'Cambios en')} <b>{node(e.from)?.label}</b> → {e.sign === 1 ? L('more', 'más') : e.sign === -1 ? L('less', 'menos') : L('affects', 'afectan a')} <b>{node(e.to)?.label}</b></li>
+            ))}
+          </ul>
+        </section>
+      )}
       <section className="rounded-xl border border-line bg-surface p-4">
-        <Label>Edit structure</Label>
+        <Label>{L('Edit structure', 'Editar estructura')}</Label>
         <form className="mb-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); if (!label.trim()) return; setS({ ...spec, nodes: [...spec.nodes, { id: uid('n'), label: label.trim(), x: 320, y: 170 }] }); setLabel('') }}>
-          <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="New concept…" aria-label="New concept name" className="h-9 min-w-0 flex-1 rounded-lg border border-line bg-bg px-3 text-sm outline-none focus:border-accent" />
-          <Btn type="submit" variant="outline" size="sm" className="h-9"><Plus size={14} />Add node</Btn>
+          <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={L('New factor…', 'Nuevo factor…')} aria-label="New concept name" className="h-9 min-w-0 flex-1 rounded-lg border border-line bg-bg px-3 text-sm outline-none focus:border-accent" />
+          <Btn type="submit" variant="outline" size="sm" className="h-9"><Plus size={14} />{L('Add factor', 'Agregar factor')}</Btn>
         </form>
         <form className="grid grid-cols-2 gap-2 sm:grid-cols-[1fr_1fr_90px_1.4fr_auto]" onSubmit={(e) => { e.preventDefault(); if (!from || !to || from === to) return; setS({ ...spec, edges: [...spec.edges, { id: uid('ed'), from, to, sign: Number(sign) as 1 | -1 | 0, note: note || 'Added by you.' }] }); setNote('') }}>
           {[['From', from, setFrom], ['To', to, setTo]].map(([lab, val, set]) => (
@@ -96,11 +111,11 @@ export default function GraphView({ model, w }: { model: MathModel; w: Working }
           ))}
           <select aria-label="Sign" value={sign} onChange={(e) => setSign(e.target.value as '1')} className="h-9 rounded-lg border border-line bg-bg px-2 text-sm"><option value="1">+ raises</option><option value="-1">− lowers</option><option value="0">? unknown</option></select>
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Justification" aria-label="Justification" className="col-span-2 h-9 rounded-lg border border-line bg-bg px-3 text-sm outline-none focus:border-accent sm:col-span-1" />
-          <Btn type="submit" variant="outline" size="sm" className={cx('col-span-2 h-9 sm:col-span-1')}>Add edge</Btn>
+          <Btn type="submit" variant="outline" size="sm" className={cx('col-span-2 h-9 sm:col-span-1')}>{L('Add arrow', 'Agregar flecha')}</Btn>
         </form>
       </section>
       {spec.gaps.length > 0 && (
-        <section className="rounded-xl border border-line bg-surface p-4"><Label>What is missing to quantify this</Label><ul className="list-disc space-y-1 pl-5 text-[13px] text-mute">{spec.gaps.map((g, i) => <li key={i}>{g}</li>)}</ul></section>
+        <section className="rounded-xl border border-line bg-surface p-4"><Label>{L('What is missing to quantify this', 'Qué falta para cuantificarlo')}</Label><ul className="list-disc space-y-1 pl-5 text-[13px] text-mute">{spec.gaps.map((g, i) => <li key={i}>{g}</li>)}</ul></section>
       )}
     </div>
   )

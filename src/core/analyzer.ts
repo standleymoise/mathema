@@ -63,7 +63,8 @@ const VERBS: [RegExp, 1 | -1 | 0, string][] = [
 export interface RelationHit { from: string; to: string; sign: 1 | -1 | 0 }
 export function extractRelations(text: string): RelationHit[] {
   const hits: RelationHit[] = []
-  for (const s of text.split(/[.!?\n;]+/)) {
+  for (const s of text.split(/[.!?\n;,]+|\s(?:pero|but|while|mientras|aunque|although)\s/i)) {
+    if (!s) continue
     const toks = strip(s.toLowerCase()).split(/\s+/)
     for (let i = 1; i < toks.length - 1; i++) {
       const verb = VERBS.find(([re]) => re.test(toks[i]))
@@ -129,7 +130,13 @@ export function analyze({ text, lang, datasets = [] }: AnalysisInput): Analysis 
   const nums = clean.match(/-?\d+(?:[.,]\d+)?\s?(?:%|°\s?C|mm|kg|ha|t\/ha|days|días|usd|\$|€)/gi) ?? []
   const used = new Set<string>()
   const firstSentence = clean.split(/[.!?\n]/)[0]?.trim() ?? ''
-  const title = (firstSentence.length > 70 ? firstSentence.slice(0, 67) + '…' : firstSentence) || L('Untitled idea', 'Idea sin título')
+  const shortTitle = (t: string) => {
+    const head = t.split(/,|;|\s(?:pero|but)\s/i)[0].trim()
+    const base = head.length >= 15 ? head : t
+    if (base.length <= 60) return base.replace(/[\s,.:;]+$/, '')
+    const cut = base.slice(0, 60); return cut.slice(0, Math.max(cut.lastIndexOf(' '), 30)).replace(/[\s,.:;]+$/, '') + '…'
+  }
+  const title = shortTitle(firstSentence) || L('Untitled idea', 'Idea sin título')
   const topic = concepts.slice(0, 3).join(', ') || L('unspecified', 'sin especificar')
   const question = /\?/.test(clean) ? clean.split(/(?<=\?)/)[0].trim().split('\n').pop()!.trim() : L(`How are ${concepts[0] ?? 'the main quantity'} and ${concepts[1] ?? 'its drivers'} related, and what follows from it?`, `¿Cómo se relacionan ${concepts[0] ?? 'la cantidad principal'} y ${concepts[1] ?? 'sus factores'}, y qué se sigue de ello?`)
 
@@ -269,7 +276,7 @@ export function analyze({ text, lang, datasets = [] }: AnalysisInput): Analysis 
     const names: string[] = []
     const add = (n: string) => { const key = normName(n); if (!names.some((x) => normName(x) === key)) names.push(n); return names.findIndex((x) => normName(x) === key) }
     const edgesRaw = relations.map((r) => ({ f: add(r.from), t: add(r.to), sign: r.sign }))
-    concepts.slice(0, 6).forEach(add)
+    if (!edgesRaw.length) concepts.slice(0, 6).forEach(add)
     const n = names.slice(0, 9)
     const pos = circleLayout(n.length)
     const causal = edgesRaw.length >= 1
