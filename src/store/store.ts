@@ -159,6 +159,10 @@ export const models = {
     }
     ui.selectModel(id, { workspace: true })
   },
+  /** The user's own conclusion text: metadata, no new version. */
+  setConclusion(id: string, text: string) {
+    setDB((db) => ({ ...db, models: db.models.map((m) => (m.id === id ? { ...m, userConclusion: text.slice(0, 4000), updatedAt: now() } : m)) }))
+  },
   duplicate(id: string) {
     const m = getModel(id)
     if (!m) return

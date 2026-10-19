@@ -192,6 +192,8 @@ export interface MathModel {
   scenarios: Scenario[]
   versions: ModelVersion[]
   isDemo: boolean
+  /** The user's own written conclusion (free text), shown beside the computed one. */
+  userConclusion?: string
   createdAt: string
   updatedAt: string
 }

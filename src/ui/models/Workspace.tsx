@@ -3,6 +3,7 @@ import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis
 import { Copy, PanelRight, Pencil, Save, Trash2, FlaskConical } from 'lucide-react'
 import type { MathModel } from '../../core/types'
 import { EXP_TYPE } from './Lists'
+import ConclusionPanel from './ConclusionPanel'
 import { provLabel } from '../../core/analyzer'
 import { sensitivity } from '../../core/engine/runtime'
 import { Btn, Confirm, Disclosure, Label, PromptModal, ValidationBadge, cx } from '../common'
@@ -116,6 +117,7 @@ export default function Workspace({ model }: { model: MathModel }) {
         {w.dirty && <p className="mt-2 text-xs text-warn" role="status">{tr(lang, 'Unsaved experimentation changes. Saving creates a new version; the previous one stays in history.', 'Cambios de experimentación sin guardar. Guardar crea una nueva versión; la anterior queda en el historial.')}</p>}
       </header>
       <Body model={model} w={w} />
+      <div className="mt-4"><ConclusionPanel model={model} w={w} /></div>
       <div className="mt-4 grid min-w-0 grid-cols-1 gap-4">
         <SensitivityPanel model={model} w={w} />
         {exps.length > 0 && (
