@@ -18,6 +18,8 @@ export async function migrate(pool, cfg) {
     if (await hasIndex('idx_subs_external')) await pool.query('DROP INDEX idx_subs_external ON subscriptions')
     await pool.query('CREATE UNIQUE INDEX uq_subs_external ON subscriptions (external_id)') // PayPal ids are unique; NULLs (manual subs) are allowed many times
   }
+  const hasPayIdx = (await pool.query("SELECT 1 FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='payments' AND INDEX_NAME='uq_payments_external'"))[0].length > 0
+  if (!hasPayIdx) await pool.query('CREATE UNIQUE INDEX uq_payments_external ON payments (external_id)') // one row per PayPal sale/refund/dispute
   // legacy setting from the first release
   const [legacy] = await pool.query("SELECT v FROM settings WHERE k='signup_enabled'")
   if (legacy.length && legacy[0].v === 'false') await pool.query("INSERT IGNORE INTO settings (k,v) VALUES ('signup_mode','\"closed\"')")

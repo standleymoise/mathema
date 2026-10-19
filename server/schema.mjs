@@ -155,6 +155,7 @@ export const COLUMNS = [
   ['plans', 'paypal_plan_id', 'VARCHAR(64) NULL'],
   ['subscriptions', 'external_id', 'VARCHAR(64) NULL'],
   ['users', 'terms_accepted_at', 'DATETIME NULL'],
+  ['payments', 'external_id', 'VARCHAR(80) NULL'],
   ['payments', 'fee_cents', 'INT NOT NULL DEFAULT 0'],
   ['payments', 'fee_estimated', 'TINYINT(1) NOT NULL DEFAULT 0'],
 ]

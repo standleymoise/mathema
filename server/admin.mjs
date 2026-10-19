@@ -166,7 +166,13 @@ export function adminRoutes(pool, cfg) {
   })
   r.delete('/payments/:id', async (req, res) => { await pool.query('DELETE FROM payments WHERE id=?', [Number(req.params.id)]); res.json({ ok: true }) })
 
-  r.get('/expenses', async (_req, res) => { const [rows] = await pool.query('SELECT id,name,category,amount_cents amountCents,month,recurring FROM expenses ORDER BY month DESC, id DESC LIMIT 300'); res.json(rows.map((e) => ({ ...e, recurring: !!e.recurring }))) })
+  r.get('/expenses', async (_req, res) => {
+    const [rows] = await pool.query('SELECT id,name,category,amount_cents amountCents,month,recurring FROM expenses ORDER BY month DESC, id DESC LIMIT 300')
+    // PayPal fees appear automatically as one computed line per month (read-only; already counted by Finance, never stored here, so nothing is counted twice)
+    const [fees] = await pool.query("SELECT DATE_FORMAT(paid_at,'%Y-%m') month, SUM(fee_cents) f, SUM(fee_estimated) est, COUNT(*) n FROM payments WHERE fee_cents>0 GROUP BY month ORDER BY month DESC LIMIT 24")
+    const auto = fees.map((x) => ({ id: `fees-${x.month}`, name: 'PayPal fees', category: 'paypal_fees', amountCents: Number(x.f), month: x.month, recurring: false, auto: true, estimatedPayments: Number(x.est), payments: Number(x.n) }))
+    res.json([...auto, ...rows.map((e) => ({ ...e, recurring: !!e.recurring, auto: false }))].sort((p, q) => (q.month > p.month ? 1 : q.month < p.month ? -1 : 0)))
+  })
   r.post('/expenses', async (req, res) => {
     const b = req.body ?? {}
     const cents = Number(b.amountCents)

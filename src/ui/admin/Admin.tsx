@@ -37,7 +37,7 @@ const tip = { background: 'rgb(var(--surface))', border: '1px solid rgb(var(--li
 // ---- Finance --------------------------------------------------------------------------------
 interface Fin {
   month: string
-  kpis: { mrr: number; arr: number; atRiskMrr: number; activeSubscribers: number; arpu: number; churn30d: number; churnRate30d: number; aiCostThisMonth: number; expensesThisMonth: number; revenueThisMonth: number; feesThisMonth: number; netRevenueThisMonth: number; estimatedRunRateFees: number; paymentsWithoutFee: number; estimatedMonthlyMargin: number; estimatedMarginPct: number | null; costPerActiveSubscriber: number | null; avgCostPerAnalysis: number | null }
+  kpis: { mrr: number; arr: number; atRiskMrr: number; activeSubscribers: number; arpu: number; churn30d: number; churnRate30d: number; aiCostThisMonth: number; expensesThisMonth: number; revenueThisMonth: number; refundsThisMonth: number; feesThisMonth: number; netRevenueThisMonth: number; estimatedRunRateFees: number; paymentsWithoutFee: number; estimatedMonthlyMargin: number; estimatedMarginPct: number | null; costPerActiveSubscriber: number | null; avgCostPerAnalysis: number | null }
   months: { month: string; revenue: number; fees: number; aiCost: number; expenses: number; profit: number; analyses: number; failed: number }[]
   mrrHistory: { month: string; mrr: number }[]
   byPlan: { plan: string; id: string; subscribers: number; mrr: number }[]
@@ -82,7 +82,7 @@ function FinanceTab({ lang }: { lang: 'en' | 'es' }) {
         <Kpi label={L('Churn (30 d)', 'Cancelaciones (30 d)')} value={`${k.churn30d}`} sub={pct(k.churnRate30d)} />
         <Kpi label={L('AI cost (this month)', 'Costo de IA (este mes)')} value={usd(k.aiCostThisMonth, 4)} sub={k.avgCostPerAnalysis !== null ? `${usd(k.avgCostPerAnalysis, 4)} / ${L('analysis', 'análisis')}` : undefined} />
         <Kpi label={L('Expenses (this month)', 'Gastos (este mes)')} value={usd(k.expensesThisMonth)} />
-        <Kpi label={L('Revenue collected (month)', 'Ingresos cobrados (mes)')} value={usd(k.revenueThisMonth)} sub={L('gross, from recorded payments', 'bruto, de pagos registrados')} />
+        <Kpi label={L('Revenue collected (month)', 'Ingresos cobrados (mes)')} value={usd(k.revenueThisMonth)} sub={k.refundsThisMonth > 0 ? L(`net of ${usd(k.refundsThisMonth)} refunded`, `neto de ${usd(k.refundsThisMonth)} reembolsados`) : L('gross, from recorded payments', 'bruto, de pagos registrados')} />
         <Kpi label={L('PayPal fees (month)', 'Comisiones PayPal (mes)')} value={usd(k.feesThisMonth)} sub={`${L('net revenue', 'ingreso neto')} ${usd(k.netRevenueThisMonth)}`} />
         <Kpi label={L('Est. monthly margin', 'Margen mensual est.')} value={usd(k.estimatedMonthlyMargin)} sub={`${pct(k.estimatedMarginPct)} · MRR − AI − ${L('expenses', 'gastos')} − ${L('fees', 'comisiones')} (${usd(k.estimatedRunRateFees)})`} warn={k.estimatedMonthlyMargin < 0} />
       </div>
@@ -278,7 +278,7 @@ function PeopleTab({ lang }: { lang: 'en' | 'es' }) {
 
 // ---- Money in/out ---------------------------------------------------------------------------
 interface Pay { id: number; email: string | null; amountCents: number; feeCents: number; feeEstimated: number; source: string; paidAt: string; note: string }
-interface Exp { id: number; name: string; category: string; amountCents: number; month: string; recurring: boolean }
+interface Exp { id: number | string; name: string; category: string; amountCents: number; month: string; recurring: boolean; auto?: boolean; estimatedPayments?: number; payments?: number }
 function MoneyTab({ lang }: { lang: 'en' | 'es' }) {
   const L = (en: string, es: string) => tr(lang, en, es)
   const pays = useAdmin<Pay[]>('payments'), exps = useAdmin<Exp[]>('expenses'), audit = useAdmin<{ id: number; action: string; detail: string; createdAt: string; email: string | null }[]>('audit')
@@ -293,7 +293,7 @@ function MoneyTab({ lang }: { lang: 'en' | 'es' }) {
           <input aria-label="Note" className={cx(input, 'min-w-0 flex-1')} placeholder={L('Note (customer, invoice…)', 'Nota (cliente, factura…)')} value={p.note} onChange={(e) => setP({ ...p, note: e.target.value })} />
           <Btn type="submit" variant="outline" size="sm" className="h-9" disabled={!Number(p.amount)}>{L('Record', 'Registrar')}</Btn>
         </form>
-        <table className="w-full text-[13px]"><tbody>{(pays.data ?? []).slice(0, 30).map((r) => <tr key={r.id} className="border-t border-line"><td className="py-1.5">{new Date(r.paidAt).toLocaleDateString()}</td><td className="text-mute">{r.note || r.email || ''}</td><td className="text-right font-mono">{usd(r.amountCents / 100)}{r.feeCents > 0 && <span className="ml-2 text-xs text-mute">− {usd(r.feeCents / 100)}{r.feeEstimated ? ' (est.)' : ''}</span>}</td><td className="text-right"><IconBtn label="Delete payment" className="h-8 w-8" onClick={() => { if (confirm(L('Delete this payment?', '¿Eliminar este pago?'))) void act(api.del(`admin/payments/${r.id}`), L('Deleted.', 'Eliminado.'), pays.reload) }}><Trash2 size={14} /></IconBtn></td></tr>)}</tbody></table>
+        <table className="w-full text-[13px]"><tbody>{(pays.data ?? []).slice(0, 30).map((r) => <tr key={r.id} className="border-t border-line"><td className="py-1.5">{new Date(r.paidAt).toLocaleDateString()}</td><td className="text-mute">{r.note || r.email || ''}</td><td className={cx('text-right font-mono', r.amountCents < 0 && 'text-bad')}>{r.amountCents < 0 && <span className="mr-2 rounded-full bg-[rgb(var(--bad)/.12)] px-2 py-0.5 font-sans text-[11px]">{L('refund', 'reembolso')}</span>}{usd(r.amountCents / 100)}{r.feeCents > 0 && <span className="ml-2 text-xs text-mute">− {usd(r.feeCents / 100)}{r.feeEstimated ? ' (est.)' : ''}</span>}</td><td className="text-right"><IconBtn label="Delete payment" className="h-8 w-8" onClick={() => { if (confirm(L('Delete this payment?', '¿Eliminar este pago?'))) void act(api.del(`admin/payments/${r.id}`), L('Deleted.', 'Eliminado.'), pays.reload) }}><Trash2 size={14} /></IconBtn></td></tr>)}</tbody></table>
       </div>
       <div className={card}><Label>{L('Expenses (hosting, domains, tools…)', 'Gastos (hosting, dominios, herramientas…)')}</Label>
         <form className="mb-3 flex flex-wrap gap-2" onSubmit={async (e) => { e.preventDefault(); await act(api.post('admin/expenses', { name: x.name, amountCents: Math.round(Number(x.amount) * 100), month: x.month, recurring: x.recurring }), L('Expense saved.', 'Gasto guardado.'), () => { setX({ ...x, name: '', amount: '' }); exps.reload() }) }}>
@@ -303,7 +303,13 @@ function MoneyTab({ lang }: { lang: 'en' | 'es' }) {
           <label className="flex items-center gap-1.5 text-[13px]"><input type="checkbox" checked={x.recurring} onChange={(e) => setX({ ...x, recurring: e.target.checked })} className="h-4 w-4 accent-[rgb(var(--accent))]" />{L('monthly', 'mensual')}</label>
           <Btn type="submit" variant="outline" size="sm" className="h-9" disabled={!x.name.trim() || !Number(x.amount)}>{L('Add', 'Agregar')}</Btn>
         </form>
-        <table className="w-full text-[13px]"><tbody>{(exps.data ?? []).map((r) => <tr key={r.id} className="border-t border-line"><td className="py-1.5">{r.name}</td><td className="text-mute">{r.month}{r.recurring ? ` → ${L('monthly', 'mensual')}` : ''}</td><td className="text-right font-mono">{usd(r.amountCents / 100)}</td><td className="text-right"><IconBtn label="Delete expense" className="h-8 w-8" onClick={() => { if (confirm(L('Delete this expense?', '¿Eliminar este gasto?'))) void act(api.del(`admin/expenses/${r.id}`), L('Deleted.', 'Eliminado.'), exps.reload) }}><Trash2 size={14} /></IconBtn></td></tr>)}</tbody></table>
+        <table className="w-full text-[13px]"><tbody>{(exps.data ?? []).map((r) => (
+          <tr key={r.id} className="border-t border-line">
+            <td className="py-1.5">{r.name}{r.auto && <span className="ml-2 rounded-full bg-sunk px-2 py-0.5 text-[11px] text-mute">auto</span>}</td>
+            <td className="text-mute">{r.month}{r.recurring ? ` → ${L('monthly', 'mensual')}` : ''}{r.auto ? ` · ${r.payments} ${L('payments', 'pagos')}${r.estimatedPayments ? `, ${r.estimatedPayments} ${L('estimated', 'estimados')}` : ''}` : ''}</td>
+            <td className="text-right font-mono">{usd(r.amountCents / 100)}</td>
+            <td className="text-right">{!r.auto && <IconBtn label="Delete expense" className="h-8 w-8" onClick={() => { if (confirm(L('Delete this expense?', '¿Eliminar este gasto?'))) void act(api.del(`admin/expenses/${r.id}`), L('Deleted.', 'Eliminado.'), exps.reload) }}><Trash2 size={14} /></IconBtn>}</td></tr>))}</tbody></table>
+        <p className="mt-2 text-xs text-mute">{L('“auto” lines are PayPal fees summed per month from the payments; they are already counted in Finance and cannot be edited here.', 'Las líneas “auto” son las comisiones de PayPal sumadas por mes a partir de los pagos; ya se cuentan en Finanzas y no se editan aquí.')}</p>
       </div>
       <div className={card}><Label>{L('Audit log (admin actions)', 'Registro de auditoría (acciones de admin)')}</Label>
         <table className="w-full text-[12.5px]"><tbody>{(audit.data ?? []).slice(0, 25).map((a) => <tr key={a.id} className="border-t border-line"><td className="py-1 text-mute">{new Date(a.createdAt).toLocaleString()}</td><td>{a.email ?? '—'}</td><td className="font-mono">{a.action}</td><td className="text-mute">{a.detail}</td></tr>)}</tbody></table>
@@ -338,7 +344,7 @@ function BillingTab({ lang }: { lang: 'en' | 'es' }) {
       <div className={card}><Label>{L('URLs to give PayPal', 'URLs para PayPal')}</Label>
         {!data.publicUrlSet && <p className="mb-2 rounded-lg bg-[rgb(var(--warn)/.1)] p-2 text-[13px] text-warn">{L('Tip: set the PUBLIC_URL environment variable (https://your-domain) so these links are exact behind the host’s proxy.', 'Tip: definí la variable PUBLIC_URL (https://tu-dominio) para que estos enlaces sean exactos detrás del proxy del hosting.')}</p>}
         {[['Webhook URL', data.webhookUrl], ['Return URL', data.returnUrl]].map(([k, v]) => <div key={k} className="mb-2 flex items-center gap-2"><span className="w-28 shrink-0 text-[13px] text-mute">{k}</span><code className="min-w-0 flex-1 break-all rounded bg-sunk px-2 py-1 text-[12px]">{v}</code><CopyBtn text={v} label="Copy" /></div>)}
-        <p className="mt-2 text-xs text-mute">{L('Webhook events to subscribe: BILLING.SUBSCRIPTION.ACTIVATED, CANCELLED, EXPIRED, SUSPENDED, PAYMENT.FAILED and PAYMENT.SALE.COMPLETED. Paste each PayPal plan id (P-…) in Users & plans → Plans.', 'Eventos del webhook: BILLING.SUBSCRIPTION.ACTIVATED, CANCELLED, EXPIRED, SUSPENDED, PAYMENT.FAILED y PAYMENT.SALE.COMPLETED. Pegá cada id de plan de PayPal (P-…) en Usuarios y planes → Planes.')}</p>
+        <p className="mt-2 text-xs text-mute">{L('Webhook events to subscribe: BILLING.SUBSCRIPTION.ACTIVATED, CANCELLED, EXPIRED, SUSPENDED, PAYMENT.FAILED, PAYMENT.SALE.COMPLETED, PAYMENT.SALE.REFUNDED, PAYMENT.SALE.REVERSED, CUSTOMER.DISPUTE.CREATED and CUSTOMER.DISPUTE.RESOLVED. Paste each PayPal plan id (P-…) in Users & plans → Plans.', 'Eventos del webhook: BILLING.SUBSCRIPTION.ACTIVATED, CANCELLED, EXPIRED, SUSPENDED, PAYMENT.FAILED, PAYMENT.SALE.COMPLETED, PAYMENT.SALE.REFUNDED, PAYMENT.SALE.REVERSED, CUSTOMER.DISPUTE.CREATED y CUSTOMER.DISPUTE.RESOLVED. Pegá cada id de plan de PayPal (P-…) en Usuarios y planes → Planes.')}</p>
       </div>
       <FeeEstimate lang={lang} />
       <p className="text-xs leading-relaxed text-mute">{L('Revenue is recorded gross in USD only; PayPal fees are recorded per payment as a cost (real fee when PayPal reports it, otherwise your estimate). Without a verified webhook nothing is activated automatically.', 'Los ingresos se registran brutos (antes de comisiones de PayPal) y solo en USD. Sin un webhook verificado no se activa nada automáticamente.')}</p>

@@ -7,7 +7,7 @@ MATHEMA creates the subscription through PayPal's API, sends the customer to Pay
 ## 1. PayPal side (Developer dashboard → developer.paypal.com)
 1. Use a **Business** PayPal account. In *Apps & Credentials*, **Sandbox** tab: create an app → copy **Client ID** and **Secret**.
 2. *Subscriptions → Plans* (or Products → Plans): create a product "MATHEMA" and a plan **Pro**: USD 12 monthly (match the price you set in MATHEMA), auto-renew. Copy the **Plan ID** (`P-…`).
-3. *Webhooks*: add the Webhook URL shown in **Admin → Billing (PayPal)** (`https://YOUR-DOMAIN/api/billing/paypal/webhook`) and subscribe to: `BILLING.SUBSCRIPTION.ACTIVATED`, `BILLING.SUBSCRIPTION.CANCELLED`, `BILLING.SUBSCRIPTION.EXPIRED`, `BILLING.SUBSCRIPTION.SUSPENDED`, `BILLING.SUBSCRIPTION.PAYMENT.FAILED`, `PAYMENT.SALE.COMPLETED`. Copy the **Webhook ID**.
+3. *Webhooks*: add the Webhook URL shown in **Admin → Billing (PayPal)** (`https://YOUR-DOMAIN/api/billing/paypal/webhook`) and subscribe to: `BILLING.SUBSCRIPTION.ACTIVATED`, `BILLING.SUBSCRIPTION.CANCELLED`, `BILLING.SUBSCRIPTION.EXPIRED`, `BILLING.SUBSCRIPTION.SUSPENDED`, `BILLING.SUBSCRIPTION.PAYMENT.FAILED`, `PAYMENT.SALE.COMPLETED`, `PAYMENT.SALE.REFUNDED`, `PAYMENT.SALE.REVERSED`, `CUSTOMER.DISPUTE.CREATED`, `CUSTOMER.DISPUTE.RESOLVED`. Copy the **Webhook ID**.
 
 ## 2. MATHEMA side
 1. Set the env var `PUBLIC_URL=https://YOUR-DOMAIN` (so return URLs are exact behind Hostinger's proxy) and redeploy.
@@ -27,5 +27,8 @@ Repeat step 1 in the **Live** tab (new Client ID/Secret, a **live** plan with it
 | `PAYMENT.SALE.COMPLETED` (USD) | payment recorded once (gross) |
 | `…SUSPENDED` / `PAYMENT.FAILED` | `past_due` (excluded from MRR, shown as "at-risk") |
 | `…CANCELLED` / `EXPIRED` / customer cancels | `canceled`, plan back to Free |
+| `PAYMENT.SALE.REFUNDED` / `REVERSED` (chargeback) | **negative payment** in the month it happens, matched to the original sale (or to the subscription); idempotent |
+| `CUSTOMER.DISPUTE.CREATED` | audit-log entry only (funds may be held; you must respond in PayPal) |
+| `CUSTOMER.DISPUTE.RESOLVED` in the buyer's favour | **negative payment** for the refunded amount; any other outcome is only audited |
 
-Known limits: one currency (USD); the fee estimate is only as good as the percentage you enter (use the real figures from your PayPal fee schedule and compare with a PayPal statement); refunds/disputes must be recorded by hand (Admin → Payments, negative amount); proration/plan changes are not automated (cancel and re-subscribe).
+Known limits: one currency (USD); the fee estimate is only as good as the percentage you enter (use the real figures from your PayPal fee schedule and compare with a PayPal statement); refunds are booked as negative revenue but **access is not revoked automatically** (cancel the subscription yourself if appropriate); PayPal fees on refunded payments are not returned in the books (PayPal's policy varies, so adjust by hand if yours refunds them); the dispute webhook field names could not be verified from public docs, so **test them with PayPal's sandbox webhook simulator / a sandbox dispute before going live** (if a payload does not match, the money-back is still audited, and you can book it by hand); proration/plan changes are not automated (cancel and re-subscribe).

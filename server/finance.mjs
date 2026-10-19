@@ -29,8 +29,8 @@ export function computeFinance({ now = new Date(), months = 12, subs, plans, pay
     return { month: m, mrr: r2(live.reduce((a, s) => a + monthlyCents(s), 0) / 100) }
   })
 
-  const byMonth = Object.fromEntries(range.map((m) => [m, { month: m, revenue: 0, fees: 0, aiCost: 0, expenses: 0, analyses: 0, failed: 0 }]))
-  for (const p of payments) { const m = ym(asDate(p.paid_at)); if (byMonth[m]) { byMonth[m].revenue += p.amount_cents / 100; byMonth[m].fees += (p.fee_cents ?? 0) / 100 } }
+  const byMonth = Object.fromEntries(range.map((m) => [m, { month: m, revenue: 0, fees: 0, refunds: 0, aiCost: 0, expenses: 0, analyses: 0, failed: 0 }]))
+  for (const p of payments) { const m = ym(asDate(p.paid_at)); if (byMonth[m]) { byMonth[m].revenue += p.amount_cents / 100; byMonth[m].fees += (p.fee_cents ?? 0) / 100; if (p.amount_cents < 0) byMonth[m].refunds += -p.amount_cents / 100 } }
   for (const e of expenses) for (const m of range) if (e.month === m || (e.recurring && e.month <= m)) byMonth[m].expenses += e.amount_cents / 100
   const agg = (key) => {
     const map = new Map()
@@ -48,7 +48,7 @@ export function computeFinance({ now = new Date(), months = 12, subs, plans, pay
   const topUsers = new Map()
   for (const u of usage) if (u.month === cur) { const e = topUsers.get(u.user_id) ?? { userId: u.user_id, email: u.email ?? '(deleted)', calls: 0, cost: 0 }; e.calls += u.calls; e.cost += u.cost; topUsers.set(u.user_id, e) }
 
-  const monthsOut = range.map((m) => { const b = byMonth[m]; return { month: m, revenue: r2(b.revenue), fees: r2(b.fees), aiCost: r4(b.aiCost), expenses: r2(b.expenses), profit: r2(b.revenue - b.fees - b.aiCost - b.expenses), analyses: b.analyses, failed: b.failed } })
+  const monthsOut = range.map((m) => { const b = byMonth[m]; return { month: m, revenue: r2(b.revenue), refunds: r2(b.refunds), fees: r2(b.fees), aiCost: r4(b.aiCost), expenses: r2(b.expenses), profit: r2(b.revenue - b.fees - b.aiCost - b.expenses), analyses: b.analyses, failed: b.failed } })
   const thisMonth = byMonth[cur]
   const mrr = r2(mrrCents / 100)
   // Run-rate fees: if the admin entered a fee schedule, apply it to MRR; otherwise use the fees actually recorded this month.
@@ -67,7 +67,7 @@ export function computeFinance({ now = new Date(), months = 12, subs, plans, pay
       arpu: active.length ? r2(mrr / active.length) : 0,
       churn30d: churned30, churnRate30d: startBase ? r4(churned30 / startBase) : 0,
       aiCostThisMonth: r4(thisMonth.aiCost), expensesThisMonth: r2(thisMonth.expenses),
-      revenueThisMonth: r2(thisMonth.revenue), feesThisMonth: r2(thisMonth.fees), netRevenueThisMonth: r2(thisMonth.revenue - thisMonth.fees), estimatedRunRateFees: r2(runRateFees), paymentsWithoutFee,
+      revenueThisMonth: r2(thisMonth.revenue), refundsThisMonth: r2(thisMonth.refunds), feesThisMonth: r2(thisMonth.fees), netRevenueThisMonth: r2(thisMonth.revenue - thisMonth.fees), estimatedRunRateFees: r2(runRateFees), paymentsWithoutFee,
       // MRR is a run-rate; costs are this month so far: label it as an estimate in the UI.
       estimatedMonthlyMargin: r2(mrr - monthlyCosts),
       estimatedMarginPct: mrr > 0 ? r4((mrr - monthlyCosts) / mrr) : null,

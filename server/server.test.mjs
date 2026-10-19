@@ -286,6 +286,45 @@ describe.skipIf(!up)('HTTP API on MySQL', () => {
       expect((await admin.put('/api/admin/settings').send({ paypalFeePercent: 0, paypalFeeFixedCents: 0 })).status).toBe(200)
       await pool.query("UPDATE subscriptions SET status='canceled' WHERE external_id='I-TEST123'") // leave state as the next test expects
     })
+    it('automates refunds, reversals and lost disputes as negative payments (idempotent, matched to the sale)', async () => {
+      await pool.query("UPDATE subscriptions SET status='active' WHERE external_id='I-TEST123'")
+      await pool.query('DELETE FROM billing_events'); await pool.query("DELETE FROM payments WHERE source='paypal'")
+      const [[u]] = await pool.query("SELECT id FROM users WHERE email='u@example.com'")
+      const sale = (id) => E({ event_type: 'PAYMENT.SALE.COMPLETED', resource: { id, billing_agreement_id: 'I-TEST123', amount: { total: '12.00', currency: 'USD' }, transaction_fee: { value: '0.65', currency: 'USD' } } })
+      await hook(sale('SR1')); await hook(sale('SR2')); await hook(sale('SR3'))
+      const pays = async () => (await pool.query("SELECT amount_cents, user_id, external_id FROM payments WHERE source='paypal' ORDER BY id"))[0]
+      // full refund of SR1
+      const refund = E({ event_type: 'PAYMENT.SALE.REFUNDED', resource: { id: 'RF1', sale_id: 'SR1', amount: { total: '12.00', currency: 'USD' } } })
+      expect((await hook(refund)).body.result).toBe('applied')
+      expect((await hook(refund)).body.result).toBe('duplicate') // same event replayed
+      expect((await hook(E({ event_type: 'PAYMENT.SALE.REFUNDED', resource: { id: 'RF1', sale_id: 'SR1', amount: { total: '12.00', currency: 'USD' } } }))).status).toBe(200) // new event id, same refund: unique index, no double booking
+      let rows = await pays()
+      expect(rows.filter((r) => r.amount_cents < 0)).toEqual([{ amount_cents: -1200, user_id: u.id, external_id: 'refund:RF1' }])
+      // partial refund matched through the subscription when the sale id is unknown to us
+      await hook(E({ event_type: 'PAYMENT.SALE.REFUNDED', resource: { id: 'RF2', sale_id: 'UNKNOWN', billing_agreement_id: 'I-TEST123', amount: { total: '4.00', currency: 'USD' } } }))
+      // refund of a sale we never recorded and no subscription: not booked, but audited
+      await hook(E({ event_type: 'PAYMENT.SALE.REFUNDED', resource: { id: 'RF3', sale_id: 'GHOST', amount: { total: '9.00', currency: 'USD' } } }))
+      // chargeback
+      await hook(E({ event_type: 'PAYMENT.SALE.REVERSED', resource: { id: 'RV1', sale_id: 'SR2', amount: { total: '12.00', currency: 'USD' } } }))
+      // disputes: opened (audit only), lost (negative), won (nothing)
+      await hook(E({ event_type: 'CUSTOMER.DISPUTE.CREATED', resource: { dispute_id: 'PP-D-1', reason: 'MERCHANDISE_OR_SERVICE_NOT_RECEIVED', dispute_amount: { value: '12.00', currency_code: 'USD' } } }))
+      await hook(E({ event_type: 'CUSTOMER.DISPUTE.RESOLVED', resource: { dispute_id: 'PP-D-1', dispute_outcome: { outcome_code: 'RESOLVED_BUYER_FAVOUR' }, dispute_amount: { value: '12.00', currency_code: 'USD' }, disputed_transactions: [{ seller_transaction_id: 'SR3', buyer_transaction_id: 'BX' }] } }))
+      await hook(E({ event_type: 'CUSTOMER.DISPUTE.RESOLVED', resource: { dispute_id: 'PP-D-2', dispute_outcome: { outcome_code: 'RESOLVED_SELLER_FAVOUR' }, dispute_amount: { value: '12.00', currency_code: 'USD' } } }))
+      rows = await pays()
+      expect(rows.filter((r) => r.amount_cents < 0).map((r) => [r.external_id, r.amount_cents, r.user_id === u.id]).sort()).toEqual([['dispute:PP-D-1', -1200, true], ['refund:RF1', -1200, true], ['refund:RF2', -400, true], ['reversal:RV1', -1200, true]])
+      const [audit] = await pool.query("SELECT action FROM audit_log WHERE action LIKE 'paypal.%'")
+      expect(audit.map((a) => a.action)).toEqual(expect.arrayContaining(['paypal.refund_unmatched', 'paypal.dispute_opened', 'paypal.dispute_closed']))
+      // finance: revenue is net of money returned, refunds are visible
+      const k = (await admin.get('/api/admin/finance')).body.kpis
+      expect(k.refundsThisMonth).toBeGreaterThanOrEqual(40)
+      expect(k.revenueThisMonth).toBeLessThan(36 + 12 + 1) // 3 sales (36) minus 40 of refunds, plus earlier manual payments only
+      // expenses list shows PayPal fees as an automatic monthly line (not stored, not double-counted)
+      const ex = (await admin.get('/api/admin/expenses')).body.filter((e) => e.auto)
+      const [[sum]] = await pool.query('SELECT SUM(fee_cents) f FROM payments WHERE fee_cents>0')
+      expect(ex.reduce((a, e) => a + e.amountCents, 0)).toBe(Number(sum.f)); expect(ex[0].category).toBe('paypal_fees')
+      expect((await pool.query("SELECT COUNT(*) n FROM expenses WHERE category='paypal_fees'"))[0][0].n).toBe(0)
+      await pool.query("UPDATE subscriptions SET status='canceled' WHERE external_id='I-TEST123'")
+    })
     it('lets a customer cancel their PayPal subscription', async () => {
       pp.status = 'ACTIVE'
       const [[u]] = await pool.query("SELECT id FROM users WHERE email='u@example.com'")

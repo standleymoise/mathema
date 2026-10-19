@@ -65,6 +65,31 @@ async function endSubscription(pool, externalId, status) {
   if (status === 'canceled') await pool.query("UPDATE users SET plan_id='free' WHERE id=? AND plan_id=?", [sub.user_id, sub.plan_id])
 }
 
+
+/** Inserts a payment; a repeated PayPal id (unique index) is treated as already recorded, never as an error. */
+async function insertPayment(pool, { userId, cents: amount, when, note, externalId, fee = 0, estimated = 0 }) {
+  try {
+    await pool.query('INSERT INTO payments (user_id,amount_cents,currency,paid_at,source,note,external_id,fee_cents,fee_estimated) VALUES (?,?,?,?,?,?,?,?,?)', [userId ?? null, amount, 'USD', when ? new Date(when) : new Date(), 'paypal', String(note).slice(0, 255), externalId, fee, estimated])
+    return true
+  } catch (e) { if (e.code === 'ER_DUP_ENTRY') return false; throw e }
+}
+const idsIn = (o, out = new Set()) => { // every *transaction_id string in a dispute payload (field names vary between PayPal APIs)
+  if (o && typeof o === 'object') for (const [k, v] of Object.entries(o)) { if (/transaction_id$/i.test(k) && typeof v === 'string') out.add(v); else idsIn(v, out) }
+  return out
+}
+
+/** Money going back to the customer (refund, reversal, lost dispute) becomes a NEGATIVE payment in the month it happens. */
+async function recordMoneyBack(pool, { kind, eventRef, saleIds, billingAgreementId, amount, currency, when }) {
+  if (currency !== 'USD' || !(Number(amount) > 0)) return 'skipped'
+  let userId = null, matched = false
+  for (const id of saleIds) { if (!id) continue; const [[p]] = await pool.query('SELECT user_id FROM payments WHERE external_id=?', [String(id)]); if (p) { userId = p.user_id; matched = true; break } }
+  if (!matched && billingAgreementId) { const [[sub]] = await pool.query('SELECT user_id FROM subscriptions WHERE external_id=?', [billingAgreementId]); if (sub) { userId = sub.user_id; matched = true } }
+  if (!matched && kind === 'refund') { await audit(pool, null, 'paypal.refund_unmatched', `${eventRef}: refund of ${amount} ${currency} for a sale MATHEMA never recorded; not booked`); return 'unmatched' }
+  const ok = await insertPayment(pool, { userId, cents: -cents(amount), when, note: `PayPal ${kind} ${eventRef}${matched ? '' : ' (sale not matched)'}`, externalId: `${kind}:${eventRef}` })
+  if (ok) await audit(pool, null, `paypal.${kind}`, `${eventRef}: -${amount} ${currency}${matched ? '' : ' (sale not matched)'}`)
+  return ok ? 'applied' : 'duplicate'
+}
+
 /** Applies a (signature-verified) PayPal webhook event. Safe to replay: events are de-duplicated by id. */
 export async function applyPaypalEvent(pool, ev) {
   const [dup] = await pool.query('SELECT 1 FROM billing_events WHERE event_id=?', [String(ev.id)])
@@ -86,9 +111,22 @@ export async function applyPaypalEvent(pool, ev) {
           const pct = Number(await getSetting(pool, 'paypal_fee_percent')) || 0, fixed = Number(await getSetting(pool, 'paypal_fee_fixed_cents')) || 0
           if (pct > 0 || fixed > 0) { fee = Math.min(gross, Math.round((gross * pct) / 100) + fixed); estimated = 1 }
         }
-        await pool.query('INSERT INTO payments (user_id,amount_cents,currency,paid_at,source,note,fee_cents,fee_estimated) VALUES (?,?,?,?,?,?,?,?)', [sub.user_id, gross, 'USD', r.create_time ? new Date(r.create_time) : new Date(), 'paypal', `PayPal sale ${r.id ?? ''} (gross)`.slice(0, 255), fee, estimated])
+        await insertPayment(pool, { userId: sub.user_id, cents: gross, when: r.create_time, note: `PayPal sale ${r.id ?? ''} (gross)`, externalId: r.id ? String(r.id) : null, fee, estimated })
         if (sub.status === 'past_due') await activateSubscription(pool, subId)
       }
+      break
+    }
+    case 'PAYMENT.SALE.REFUNDED': case 'PAYMENT.SALE.REVERSED': {
+      await recordMoneyBack(pool, { kind: ev.event_type.endsWith('REVERSED') ? 'reversal' : 'refund', eventRef: String(r.id), saleIds: [r.sale_id, r.parent_payment], billingAgreementId: r.billing_agreement_id, amount: r.amount?.total, currency: r.amount?.currency, when: r.create_time })
+      break
+    }
+    case 'CUSTOMER.DISPUTE.CREATED': await audit(pool, null, 'paypal.dispute_opened', `dispute ${r.dispute_id ?? ''}: ${r.reason ?? ''} ${r.dispute_amount?.value ?? ''} ${r.dispute_amount?.currency_code ?? ''} (funds may be held; respond in PayPal)`); break
+    case 'CUSTOMER.DISPUTE.RESOLVED': {
+      const code = r.dispute_outcome?.outcome_code
+      if (code === 'RESOLVED_BUYER_FAVOUR') {
+        const amt = r.dispute_outcome?.amount_refunded ?? r.dispute_amount ?? r.disputed_transactions?.[0]?.gross_amount
+        await recordMoneyBack(pool, { kind: 'dispute', eventRef: String(r.dispute_id), saleIds: [...idsIn(r.disputed_transactions)], billingAgreementId: null, amount: amt?.value, currency: amt?.currency_code ?? amt?.currency, when: r.update_time })
+      } else await audit(pool, null, 'paypal.dispute_closed', `dispute ${r.dispute_id ?? ''}: ${code ?? 'no outcome'} (no money returned to the buyer)`)
       break
     }
     default: break
