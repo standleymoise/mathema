@@ -59,14 +59,19 @@ export const Label = ({ children }: { children: ReactNode }) => <div className="
 export function Modal({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: ReactNode }) {
   const id = useId()
   const ref = useRef<HTMLDivElement>(null)
+  // Keep the latest onClose in a ref: callers pass a new function every render, and depending on it
+  // would re-run this effect (stealing focus from the input) on every keystroke.
+  const closeRef = useRef(onClose)
+  closeRef.current = onClose
   useEffect(() => {
     if (!open) return
     const prev = document.activeElement as HTMLElement | null
-    ref.current?.focus()
-    const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    // focus the dialog only if nothing inside it (e.g. an autoFocus input) already has focus
+    if (!ref.current?.contains(document.activeElement)) ref.current?.focus()
+    const k = (e: KeyboardEvent) => e.key === 'Escape' && closeRef.current()
     window.addEventListener('keydown', k)
     return () => { window.removeEventListener('keydown', k); prev?.focus() }
-  }, [open, onClose])
+  }, [open])
   if (!open) return null
   return (
     <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
