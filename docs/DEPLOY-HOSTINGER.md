@@ -18,7 +18,10 @@ hPanel → **Websites → Add website → Node.js Apps** → import the GitHub r
 | Node version | 20 or 22 |
 | Install / build command | `npm install && npm run build` (the build also type-checks) |
 | Start command | `npm start` |
-| Entry file | `server/index.mjs` |
+| Entry file | `server.js` (in the repo root; it just loads `server/index.mjs`) |
+| Framework preset | `Express.js` (or `Other`) — **not** a static/Vite preset, or the panel looks for a build output instead of the server |
+
+> If the build fails with **"Entry file not found"**: the *Entry file* field must be exactly `server.js` and the preset must not be a static one. Also make sure the branch you selected is the one that contains `server.js` (it is in `main`).
 
 ## 3. Environment variables
 Set these in the app's environment settings (see `.env.example`). **Never commit them.**

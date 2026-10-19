@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "preview": "vite preview",
-    "start": "node server/index.mjs",
+    "start": "node server.js",
     "dev:server": "node --watch server/index.mjs",
     "eval": "RUN_EVAL=1 vitest run server/eval"
   },
@@ -39,5 +39,6 @@
   },
   "engines": {
     "node": ">=20"
-  }
+  },
+  "main": "server.js"
 }
