@@ -5,6 +5,8 @@ import { encrypt } from './crypto.mjs'
 import { keyStatus, getApiKey } from './keys.mjs'
 import { PROVIDERS, verifyKey } from './ai/providers.mjs'
 import { loadFinance } from './finance.mjs'
+import { paypalConfig, ppToken, PayPalError } from './billing.mjs'
+import { randomBytes } from 'node:crypto'
 
 const bad = (res, msg) => res.status(400).json({ error: 'invalid', detail: msg })
 const money = (v) => { const n = Number(v); return Number.isFinite(n) && n >= 0 ? n : null }
@@ -60,7 +62,8 @@ export function adminRoutes(pool, cfg) {
 
   r.get('/settings', async (_req, res) => res.json({
     aiDefault: await getSetting(pool, 'ai_default'), aiResearch: await getSetting(pool, 'ai_research'), aiEffort: await getSetting(pool, 'ai_effort'),
-    signupEnabled: await getSetting(pool, 'signup_enabled'), dailyCapPerUser: await getSetting(pool, 'daily_cap_per_user'),
+    signupMode: await getSetting(pool, 'signup_mode'), dailyCapPerUser: await getSetting(pool, 'daily_cap_per_user'),
+    legalEntity: await getSetting(pool, 'legal_entity'), legalEmail: await getSetting(pool, 'legal_email'),
   }))
   r.put('/settings', async (req, res) => {
     const b = req.body ?? {}
@@ -72,7 +75,8 @@ export function adminRoutes(pool, cfg) {
       await setSetting(pool, k, { provider: b[key].provider, model: b[key].model })
     }
     if (b.aiEffort !== undefined) { if (!['low', 'medium', 'high'].includes(b.aiEffort)) return bad(res, 'effort must be low, medium or high'); await setSetting(pool, 'ai_effort', b.aiEffort) }
-    if (b.signupEnabled !== undefined) await setSetting(pool, 'signup_enabled', !!b.signupEnabled)
+    if (b.signupMode !== undefined) { if (!['open', 'invite', 'closed'].includes(b.signupMode)) return bad(res, 'signupMode must be open, invite or closed'); await setSetting(pool, 'signup_mode', b.signupMode) }
+    for (const [key, k, max] of [['legalEntity', 'legal_entity', 160], ['legalEmail', 'legal_email', 160]]) if (b[key] !== undefined) await setSetting(pool, k, String(b[key]).trim().slice(0, max))
     if (b.dailyCapPerUser !== undefined) { const n = Number(b.dailyCapPerUser); if (!Number.isInteger(n) || n < 0 || n > 10000) return bad(res, 'daily cap must be an integer 0-10000 (0 = no cap)'); await setSetting(pool, 'daily_cap_per_user', n) }
     await audit(pool, req.user.id, 'settings.update', Object.keys(b).join(','))
     res.json({ ok: true })
@@ -104,20 +108,22 @@ export function adminRoutes(pool, cfg) {
     res.json({ ok: true })
   })
 
-  r.get('/plans', async (_req, res) => { const [rows] = await pool.query('SELECT id,name,price_cents priceCents,interval_unit intervalUnit,ai_monthly_quota aiMonthlyQuota,active FROM plans ORDER BY price_cents'); res.json(rows.map((p) => ({ ...p, active: !!p.active }))) })
+  r.get('/plans', async (_req, res) => { const [rows] = await pool.query('SELECT id,name,price_cents priceCents,interval_unit intervalUnit,ai_monthly_quota aiMonthlyQuota,paypal_plan_id paypalPlanId,active FROM plans ORDER BY price_cents'); res.json(rows.map((p) => ({ ...p, active: !!p.active }))) })
   r.put('/plans', async (req, res) => {
     const b = req.body ?? {}
     if (!/^[a-z0-9_-]{2,32}$/.test(String(b.id))) return bad(res, 'plan id: 2-32 chars a-z 0-9 _ -')
     const price = Number(b.priceCents), quota = b.aiMonthlyQuota === null || b.aiMonthlyQuota === '' ? null : Number(b.aiMonthlyQuota)
     if (!Number.isInteger(price) || price < 0 || (quota !== null && (!Number.isInteger(quota) || quota < 0))) return bad(res, 'price (cents) and quota must be non-negative integers')
-    await pool.query('INSERT INTO plans (id,name,price_cents,interval_unit,ai_monthly_quota,active) VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE name=VALUES(name), price_cents=VALUES(price_cents), interval_unit=VALUES(interval_unit), ai_monthly_quota=VALUES(ai_monthly_quota), active=VALUES(active)',
-      [b.id, String(b.name || b.id).slice(0, 80), price, b.intervalUnit === 'year' ? 'year' : 'month', quota, b.active === false ? 0 : 1])
+    const ppid = b.paypalPlanId === undefined || b.paypalPlanId === null || b.paypalPlanId === '' ? null : String(b.paypalPlanId).trim()
+    if (ppid !== null && !/^P-[A-Z0-9]{10,60}$/i.test(ppid)) return bad(res, 'PayPal plan id looks like P-XXXXXXXXXXXX (copy it from PayPal → Subscriptions → Plans)')
+    await pool.query('INSERT INTO plans (id,name,price_cents,interval_unit,ai_monthly_quota,paypal_plan_id,active) VALUES (?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE name=VALUES(name), price_cents=VALUES(price_cents), interval_unit=VALUES(interval_unit), ai_monthly_quota=VALUES(ai_monthly_quota), paypal_plan_id=VALUES(paypal_plan_id), active=VALUES(active)',
+      [b.id, String(b.name || b.id).slice(0, 80), price, b.intervalUnit === 'year' ? 'year' : 'month', quota, ppid, b.active === false ? 0 : 1])
     await audit(pool, req.user.id, 'plan.upsert', b.id)
     res.json({ ok: true })
   })
 
   r.get('/subscriptions', async (_req, res) => {
-    const [rows] = await pool.query(`SELECT s.id,s.user_id userId,u.email,s.plan_id planId,s.status,s.amount_cents amountCents,s.interval_unit intervalUnit,s.started_at startedAt,s.canceled_at canceledAt,s.source,s.note FROM subscriptions s LEFT JOIN users u ON u.id=s.user_id ORDER BY s.started_at DESC LIMIT 500`)
+    const [rows] = await pool.query(`SELECT s.id,s.user_id userId,u.email,s.plan_id planId,s.status,s.amount_cents amountCents,s.interval_unit intervalUnit,s.started_at startedAt,s.canceled_at canceledAt,s.source,s.note,s.external_id externalId FROM subscriptions s LEFT JOIN users u ON u.id=s.user_id ORDER BY s.started_at DESC LIMIT 500`)
     res.json(rows)
   })
   r.post('/subscriptions', async (req, res) => {
@@ -164,6 +170,53 @@ export function adminRoutes(pool, cfg) {
     res.status(201).json({ ok: true })
   })
   r.delete('/expenses/:id', async (req, res) => { await pool.query('DELETE FROM expenses WHERE id=?', [Number(req.params.id)]); res.json({ ok: true }) })
+
+  // ---- PayPal ----
+  r.get('/paypal', async (req, res) => {
+    const c = await paypalConfig(pool, cfg)
+    const origin = cfg.publicUrl || `${req.protocol}://${req.get('host')}`
+    res.json({ mode: c.mode, clientId: c.clientId, secretSet: !!c.secret, webhookId: c.webhookId, webhookUrl: `${origin}/api/billing/paypal/webhook`, returnUrl: `${origin}/api/billing/return`, publicUrlSet: !!cfg.publicUrl })
+  })
+  r.put('/paypal', async (req, res) => {
+    const b = req.body ?? {}
+    if (b.mode !== undefined) { if (!['sandbox', 'live'].includes(b.mode)) return bad(res, 'mode must be sandbox or live'); await setSetting(pool, 'paypal_mode', b.mode) }
+    if (b.clientId !== undefined) { const v = String(b.clientId).trim(); if (v.length > 200 || /\s/.test(v)) return bad(res, 'client id invalid'); await setSetting(pool, 'paypal_client_id', v) }
+    if (b.webhookId !== undefined) { const v = String(b.webhookId).trim(); if (v.length > 100 || /\s/.test(v)) return bad(res, 'webhook id invalid'); await setSetting(pool, 'paypal_webhook_id', v) }
+    if (b.secret) {
+      const v = String(b.secret).trim()
+      if (v.length < 10 || v.length > 400 || /\s/.test(v)) return bad(res, 'that does not look like a PayPal secret')
+      await pool.query("INSERT INTO api_keys (provider,ciphertext,last4,updated_at,verified_at) VALUES ('paypal',?,?,?,NULL) ON DUPLICATE KEY UPDATE ciphertext=VALUES(ciphertext), last4=VALUES(last4), updated_at=VALUES(updated_at), verified_at=NULL", [encrypt(v, cfg.appSecret), v.slice(-4), new Date()])
+    }
+    await audit(pool, req.user.id, 'paypal.update', Object.keys(b).filter((k) => k !== 'secret').join(',') + (b.secret ? ',secret' : ''))
+    res.json({ ok: true })
+  })
+  r.post('/paypal/test', async (_req, res) => {
+    const c = await paypalConfig(pool, cfg)
+    if (!c.configured) return res.status(400).json({ ok: false, error: 'Set the client id and secret first' })
+    try { await ppToken(c); res.json({ ok: true, mode: c.mode }) } catch (e) { res.status(e instanceof PayPalError ? 422 : 500).json({ ok: false, error: e.message }) }
+  })
+
+  // ---- closed beta: invites and feedback ----
+  r.get('/invites', async (_req, res) => { const [rows] = await pool.query('SELECT code,note,max_uses maxUses,uses,plan_id planId,expires_at expiresAt,active,created_at createdAt FROM invites ORDER BY created_at DESC LIMIT 200'); res.json(rows.map((i) => ({ ...i, active: !!i.active }))) })
+  r.post('/invites', async (req, res) => {
+    const b = req.body ?? {}
+    const code = (b.code ? String(b.code) : randomBytes(6).toString('base64url').replace(/[-_]/g, 'x')).trim().toUpperCase()
+    const maxUses = b.maxUses === undefined ? 1 : Number(b.maxUses)
+    const days = b.expiresDays === undefined || b.expiresDays === '' || b.expiresDays === null ? null : Number(b.expiresDays)
+    if (!/^[A-Z0-9]{4,40}$/.test(code)) return bad(res, 'code: 4-40 letters/digits')
+    if (!Number.isInteger(maxUses) || maxUses < 1 || maxUses > 10000) return bad(res, 'maxUses must be 1-10000')
+    if (days !== null && (!Number.isInteger(days) || days < 1 || days > 3650)) return bad(res, 'expiresDays must be 1-3650')
+    let plan = b.planId ? String(b.planId) : null
+    if (plan) { const [p] = await pool.query('SELECT 1 FROM plans WHERE id=?', [plan]); if (!p.length) return bad(res, 'plan not found') }
+    try {
+      await pool.query('INSERT INTO invites (code,note,max_uses,uses,plan_id,expires_at,active,created_at) VALUES (?,?,?,?,?,?,1,?)', [code, String(b.note ?? '').slice(0, 160), maxUses, 0, plan, days ? new Date(Date.now() + days * 864e5) : null, new Date()])
+    } catch (e) { if (e.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'code_exists' }); throw e }
+    await audit(pool, req.user.id, 'invite.create', code)
+    res.status(201).json({ code })
+  })
+  r.delete('/invites/:code', async (req, res) => { await pool.query('UPDATE invites SET active=0 WHERE code=?', [req.params.code]); await audit(pool, req.user.id, 'invite.revoke', req.params.code); res.json({ ok: true }) })
+  r.get('/feedback', async (_req, res) => { const [rows] = await pool.query('SELECT f.id,f.kind,f.message,f.page,f.created_at createdAt,u.email FROM feedback f LEFT JOIN users u ON u.id=f.user_id ORDER BY f.id DESC LIMIT 200'); res.json(rows) })
+  r.delete('/feedback/:id', async (req, res) => { await pool.query('DELETE FROM feedback WHERE id=?', [Number(req.params.id)]); res.json({ ok: true }) })
 
   r.get('/finance', async (req, res) => res.json(await loadFinance(pool, Math.min(24, Math.max(1, Number(req.query.months) || 12)))))
   r.get('/audit', async (_req, res) => { const [rows] = await pool.query('SELECT a.id,a.action,a.detail,a.created_at createdAt,u.email FROM audit_log a LEFT JOIN users u ON u.id=a.user_id ORDER BY a.id DESC LIMIT 100'); res.json(rows) })

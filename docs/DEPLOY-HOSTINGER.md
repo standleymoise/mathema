@@ -32,6 +32,7 @@ Set these in the app's environment settings (see `.env.example`). **Never commit
 | `DB_HOST` `DB_PORT` `DB_USER` `DB_PASSWORD` `DB_NAME` | from step 1 |
 | `APP_SECRET` | 32+ random chars; encrypts API keys stored in MySQL. **Back it up**: if you lose or change it, saved keys must be re-entered |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | creates the first admin on first start (password is never overwritten later). Use a long unique password |
+| `PUBLIC_URL` | `https://your-domain`; needed for exact PayPal return/webhook URLs |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | optional fallbacks; prefer the Admin panel |
 
 Generate a secret: `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`

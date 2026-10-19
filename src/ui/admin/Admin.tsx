@@ -4,6 +4,7 @@ import { AlertTriangle, KeyRound, Trash2 } from 'lucide-react'
 import { api } from '../../services/api'
 import { Btn, IconBtn, Label, cx } from '../common'
 import { PageShell } from '../models/Lists'
+import { CopyBtn } from '../viz/shared'
 import { toast, useStore } from '../../store/store'
 import { tr } from '../../core/text'
 
@@ -119,7 +120,7 @@ function FinanceTab({ lang }: { lang: 'en' | 'es' }) {
 // ---- AI & keys ------------------------------------------------------------------------------
 interface KeyS { provider: string; configured: boolean; source: 'admin' | 'env' | null; last4: string | null; verifiedAt: string | null }
 interface ModelRow { provider: string; model: string; label: string; inputPerMtok: number | null; outputPerMtok: number | null; enabled: boolean }
-interface Settings { aiDefault: { provider: string; model: string }; aiResearch: { provider: string; model: string }; aiEffort: string; signupEnabled: boolean; dailyCapPerUser: number }
+interface Settings { aiDefault: { provider: string; model: string }; aiResearch: { provider: string; model: string }; aiEffort: string; signupMode: 'open' | 'invite' | 'closed'; dailyCapPerUser: number; legalEntity: string; legalEmail: string }
 
 function KeyCard({ k, lang, reload }: { k: KeyS; lang: 'en' | 'es'; reload: () => void }) {
   const L = (en: string, es: string) => tr(lang, en, es)
@@ -197,7 +198,6 @@ function AiTab({ lang }: { lang: 'en' | 'es' }) {
             <select className={input} value={st.aiEffort} onChange={(e) => setSt({ ...st, aiEffort: e.target.value })}><option value="low">low</option><option value="medium">medium</option><option value="high">high</option></select></label>
           <label className="grid gap-1 text-[13px]">{L('Daily AI calls per user (0 = no cap)', 'Llamadas de IA diarias por usuario (0 = sin tope)')}
             <input className={input} inputMode="numeric" value={st.dailyCapPerUser} onChange={(e) => setSt({ ...st, dailyCapPerUser: Number(e.target.value.replace(/\D/g, '')) })} /></label>
-          <label className="flex items-center gap-2 text-[13px]"><input type="checkbox" className="h-4 w-4 accent-[rgb(var(--accent))]" checked={st.signupEnabled} onChange={(e) => setSt({ ...st, signupEnabled: e.target.checked })} />{L('Allow new sign-ups', 'Permitir nuevos registros')}</label>
         </div>
         <div className="mt-3"><Btn variant="primary" size="sm" onClick={() => act(api.put('admin/settings', st), L('Settings saved.', 'Configuración guardada.'), settings.reload)}>{L('Save settings', 'Guardar configuración')}</Btn></div>
       </div>}
@@ -207,11 +207,11 @@ function AiTab({ lang }: { lang: 'en' | 'es' }) {
 
 // ---- Users & plans --------------------------------------------------------------------------
 interface UserRow { id: number; email: string; name: string; role: 'user' | 'admin'; planId: string; disabled: boolean; analysesThisMonth: number; costThisMonth: number; lastLogin: string | null }
-interface PlanRow { id: string; name: string; priceCents: number; intervalUnit: 'month' | 'year'; aiMonthlyQuota: number | null; active: boolean }
+interface PlanRow { id: string; name: string; priceCents: number; intervalUnit: 'month' | 'year'; aiMonthlyQuota: number | null; paypalPlanId: string | null; active: boolean }
 interface SubRow { id: number; email: string | null; planId: string; status: string; amountCents: number; intervalUnit: string; startedAt: string }
 
 function PlanEditor({ p, lang, reload }: { p: PlanRow; lang: 'en' | 'es'; reload: () => void }) {
-  const [d, setD] = useState({ name: p.name, price: (p.priceCents / 100).toString(), quota: p.aiMonthlyQuota === null ? '' : String(p.aiMonthlyQuota), unit: p.intervalUnit, active: p.active })
+  const [d, setD] = useState({ name: p.name, price: (p.priceCents / 100).toString(), quota: p.aiMonthlyQuota === null ? '' : String(p.aiMonthlyQuota), unit: p.intervalUnit, active: p.active, pp: p.paypalPlanId ?? '' })
   return (
     <tr className="border-t border-line">
       <td className="py-1.5 pr-2 font-mono text-xs">{p.id}</td>
@@ -219,8 +219,9 @@ function PlanEditor({ p, lang, reload }: { p: PlanRow; lang: 'en' | 'es'; reload
       <td className="px-1"><input aria-label="Price USD" inputMode="decimal" className={cx(input, 'w-20 font-mono')} value={d.price} onChange={(e) => setD({ ...d, price: e.target.value })} /></td>
       <td className="px-1"><select aria-label="Interval" className={input} value={d.unit} onChange={(e) => setD({ ...d, unit: e.target.value as 'month' | 'year' })}><option value="month">/mo</option><option value="year">/yr</option></select></td>
       <td className="px-1"><input aria-label="AI analyses per month" inputMode="numeric" placeholder="∞" className={cx(input, 'w-20 font-mono')} value={d.quota} onChange={(e) => setD({ ...d, quota: e.target.value.replace(/\D/g, '') })} /></td>
+      <td className="px-1"><input aria-label="PayPal plan id" placeholder="P-…" className={cx(input, 'w-36 font-mono text-xs')} value={d.pp} onChange={(e) => setD({ ...d, pp: e.target.value })} /></td>
       <td className="px-1 text-center"><input type="checkbox" aria-label="Active" checked={d.active} onChange={(e) => setD({ ...d, active: e.target.checked })} className="h-4 w-4 accent-[rgb(var(--accent))]" /></td>
-      <td className="text-right"><Btn size="sm" variant="outline" onClick={() => act(api.put('admin/plans', { id: p.id, name: d.name, priceCents: Math.round(Number(d.price) * 100), intervalUnit: d.unit, aiMonthlyQuota: d.quota === '' ? null : Number(d.quota), active: d.active }), tr(lang, 'Plan saved.', 'Plan guardado.'), reload)}>{tr(lang, 'Save', 'Guardar')}</Btn></td>
+      <td className="text-right"><Btn size="sm" variant="outline" onClick={() => act(api.put('admin/plans', { id: p.id, name: d.name, priceCents: Math.round(Number(d.price) * 100), intervalUnit: d.unit, aiMonthlyQuota: d.quota === '' ? null : Number(d.quota), paypalPlanId: d.pp.trim() || null, active: d.active }), tr(lang, 'Plan saved.', 'Plan guardado.'), reload)}>{tr(lang, 'Save', 'Guardar')}</Btn></td>
     </tr>
   )
 }
@@ -233,8 +234,8 @@ function PeopleTab({ lang }: { lang: 'en' | 'es' }) {
   return (
     <div className="grid min-w-0 grid-cols-1 gap-4">
       <div className={card}><Label>{L('Plans', 'Planes')}</Label>
-        <div className="overflow-x-auto"><table className="w-full text-[13px]"><thead><tr className="text-left text-[11px] uppercase tracking-wide text-mute"><th className="pb-1 font-medium">ID</th><th className="font-medium">Name</th><th className="font-medium">USD</th><th /><th className="font-medium">AI / mo</th><th className="text-center font-medium">On</th><th /></tr></thead>
-          <tbody>{(plans.data ?? []).map((p) => <PlanEditor key={`${p.id}${p.priceCents}${p.aiMonthlyQuota}${p.active}${p.name}`} p={p} lang={lang} reload={plans.reload} />)}</tbody></table></div>
+        <div className="overflow-x-auto"><table className="w-full text-[13px]"><thead><tr className="text-left text-[11px] uppercase tracking-wide text-mute"><th className="pb-1 font-medium">ID</th><th className="font-medium">Name</th><th className="font-medium">USD</th><th /><th className="font-medium">AI / mo</th><th className="font-medium">PayPal plan</th><th className="text-center font-medium">On</th><th /></tr></thead>
+          <tbody>{(plans.data ?? []).map((p) => <PlanEditor key={`${p.id}${p.priceCents}${p.aiMonthlyQuota}${p.active}${p.name}${p.paypalPlanId}`} p={p} lang={lang} reload={plans.reload} />)}</tbody></table></div>
         <form className="mt-3 flex flex-wrap gap-2" onSubmit={async (e) => { e.preventDefault(); await act(api.put('admin/plans', { id: np.id, name: np.name || np.id, priceCents: Math.round(Number(np.price || 0) * 100), aiMonthlyQuota: null }), L('Plan created.', 'Plan creado.'), () => { setNp({ id: '', name: '', price: '' }); plans.reload() }) }}>
           <input aria-label="New plan id" className={cx(input, 'w-32')} placeholder="id (e.g. team)" value={np.id} onChange={(e) => setNp({ ...np, id: e.target.value.toLowerCase() })} />
           <input aria-label="New plan name" className={cx(input, 'w-32')} placeholder={L('Name', 'Nombre')} value={np.name} onChange={(e) => setNp({ ...np, name: e.target.value })} />
@@ -304,14 +305,91 @@ function MoneyTab({ lang }: { lang: 'en' | 'es' }) {
   )
 }
 
+// ---- Billing (PayPal) -------------------------------------------------------------------------
+interface PayPalCfg { mode: 'sandbox' | 'live'; clientId: string; secretSet: boolean; webhookId: string; webhookUrl: string; returnUrl: string; publicUrlSet: boolean }
+function BillingTab({ lang }: { lang: 'en' | 'es' }) {
+  const L = (en: string, es: string) => tr(lang, en, es)
+  const { data, reload } = useAdmin<PayPalCfg>('paypal')
+  const [f, setF] = useState({ mode: 'sandbox', clientId: '', secret: '', webhookId: '' })
+  useEffect(() => { if (data) setF({ mode: data.mode, clientId: data.clientId, secret: '', webhookId: data.webhookId }) }, [data])
+  if (!data) return <p className="text-sm text-mute">…</p>
+  return (
+    <div className="grid min-w-0 grid-cols-1 gap-4">
+      <div className={card}><Label>PayPal Subscriptions</Label>
+        <p className="mb-3 text-[13px] text-mute">{L('Start in sandbox with PayPal test accounts, then switch to live. Credentials and the webhook id come from the PayPal Developer dashboard (see docs/BILLING-PAYPAL.md). The secret is encrypted and never shown again.', 'Empezá en sandbox con cuentas de prueba de PayPal y después pasá a live. Las credenciales y el id del webhook salen del panel PayPal Developer (ver docs/BILLING-PAYPAL.md). El secreto se cifra y no se vuelve a mostrar.')}</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="grid gap-1 text-[13px]">{L('Mode', 'Modo')}<select className={input} value={f.mode} onChange={(e) => setF({ ...f, mode: e.target.value })}><option value="sandbox">sandbox (test)</option><option value="live">live (real money)</option></select></label>
+          <label className="grid gap-1 text-[13px]">Client ID<input className={cx(input, 'font-mono text-xs')} value={f.clientId} onChange={(e) => setF({ ...f, clientId: e.target.value })} autoComplete="off" /></label>
+          <label className="grid gap-1 text-[13px]">Secret {data.secretSet && <span className="text-ok">({L('saved', 'guardado')})</span>}<input type="password" className={cx(input, 'font-mono text-xs')} value={f.secret} placeholder={data.secretSet ? L('leave empty to keep', 'dejar vacío para conservar') : ''} onChange={(e) => setF({ ...f, secret: e.target.value })} autoComplete="off" /></label>
+          <label className="grid gap-1 text-[13px]">Webhook ID<input className={cx(input, 'font-mono text-xs')} value={f.webhookId} onChange={(e) => setF({ ...f, webhookId: e.target.value })} autoComplete="off" /></label>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Btn variant="primary" size="sm" onClick={() => act(api.put('admin/paypal', { mode: f.mode, clientId: f.clientId, webhookId: f.webhookId, ...(f.secret ? { secret: f.secret } : {}) }), L('PayPal settings saved.', 'Configuración de PayPal guardada.'), reload)}>{L('Save', 'Guardar')}</Btn>
+          <Btn variant="outline" size="sm" onClick={async () => { const r = await api.post('admin/paypal/test', {}); toast(r.data?.ok ? L(`Connected to PayPal (${r.data.mode}).`, `Conectado a PayPal (${r.data.mode}).`) : r.data?.error ?? 'Failed', r.data?.ok ? 'ok' : 'bad') }}>{L('Test connection', 'Probar conexión')}</Btn>
+        </div>
+      </div>
+      <div className={card}><Label>{L('URLs to give PayPal', 'URLs para PayPal')}</Label>
+        {!data.publicUrlSet && <p className="mb-2 rounded-lg bg-[rgb(var(--warn)/.1)] p-2 text-[13px] text-warn">{L('Tip: set the PUBLIC_URL environment variable (https://your-domain) so these links are exact behind the host’s proxy.', 'Tip: definí la variable PUBLIC_URL (https://tu-dominio) para que estos enlaces sean exactos detrás del proxy del hosting.')}</p>}
+        {[['Webhook URL', data.webhookUrl], ['Return URL', data.returnUrl]].map(([k, v]) => <div key={k} className="mb-2 flex items-center gap-2"><span className="w-28 shrink-0 text-[13px] text-mute">{k}</span><code className="min-w-0 flex-1 break-all rounded bg-sunk px-2 py-1 text-[12px]">{v}</code><CopyBtn text={v} label="Copy" /></div>)}
+        <p className="mt-2 text-xs text-mute">{L('Webhook events to subscribe: BILLING.SUBSCRIPTION.ACTIVATED, CANCELLED, EXPIRED, SUSPENDED, PAYMENT.FAILED and PAYMENT.SALE.COMPLETED. Paste each PayPal plan id (P-…) in Users & plans → Plans.', 'Eventos del webhook: BILLING.SUBSCRIPTION.ACTIVATED, CANCELLED, EXPIRED, SUSPENDED, PAYMENT.FAILED y PAYMENT.SALE.COMPLETED. Pegá cada id de plan de PayPal (P-…) en Usuarios y planes → Planes.')}</p>
+      </div>
+      <p className="text-xs leading-relaxed text-mute">{L('Revenue is recorded gross (before PayPal fees) in USD only. Without a verified webhook nothing is activated automatically.', 'Los ingresos se registran brutos (antes de comisiones de PayPal) y solo en USD. Sin un webhook verificado no se activa nada automáticamente.')}</p>
+    </div>
+  )
+}
+
+// ---- Beta & legal -----------------------------------------------------------------------------
+interface Invite { code: string; note: string; maxUses: number; uses: number; planId: string | null; expiresAt: string | null; active: boolean }
+function BetaTab({ lang }: { lang: 'en' | 'es' }) {
+  const L = (en: string, es: string) => tr(lang, en, es)
+  const settings = useAdmin<Settings>('settings'), invites = useAdmin<Invite[]>('invites'), plans = useAdmin<PlanRow[]>('plans')
+  const fb = useAdmin<{ id: number; kind: string; message: string; page: string; createdAt: string; email: string | null }[]>('feedback')
+  const [st, setSt] = useState<Settings | null>(null)
+  const [inv, setInv] = useState({ note: '', maxUses: '1', days: '30', planId: '' })
+  useEffect(() => { if (settings.data) setSt(settings.data) }, [settings.data])
+  return (
+    <div className="grid min-w-0 grid-cols-1 gap-4">
+      {st && <div className={card}><Label>{L('Sign-up mode', 'Modo de registro')}</Label>
+        <div className="flex flex-wrap items-center gap-3">
+          <select aria-label="Sign-up mode" className={input} value={st.signupMode} onChange={(e) => setSt({ ...st, signupMode: e.target.value as Settings['signupMode'] })}>
+            <option value="open">{L('Open — anyone can register', 'Abierto — cualquiera puede registrarse')}</option><option value="invite">{L('Invite only (closed beta)', 'Solo con invitación (beta cerrada)')}</option><option value="closed">{L('Closed — no new sign-ups', 'Cerrado — sin nuevos registros')}</option></select>
+          <Btn variant="primary" size="sm" onClick={() => act(api.put('admin/settings', { signupMode: st.signupMode }), L('Saved.', 'Guardado.'), settings.reload)}>{L('Save', 'Guardar')}</Btn>
+        </div></div>}
+      <div className={card}><Label>{L('Invitation codes', 'Códigos de invitación')}</Label>
+        <form className="mb-3 flex flex-wrap items-end gap-2" onSubmit={async (e) => { e.preventDefault(); await act(api.post('admin/invites', { note: inv.note, maxUses: Number(inv.maxUses), expiresDays: inv.days ? Number(inv.days) : null, planId: inv.planId || null }), L('Code created.', 'Código creado.'), () => { setInv({ ...inv, note: '' }); invites.reload() }) }}>
+          <label className="grid gap-1 text-[12px] text-mute">{L('Note (who is it for?)', 'Nota (¿para quién?)')}<input className={cx(input, 'w-44')} value={inv.note} onChange={(e) => setInv({ ...inv, note: e.target.value })} /></label>
+          <label className="grid gap-1 text-[12px] text-mute">{L('Uses', 'Usos')}<input className={cx(input, 'w-16')} inputMode="numeric" value={inv.maxUses} onChange={(e) => setInv({ ...inv, maxUses: e.target.value.replace(/\D/g, '') })} /></label>
+          <label className="grid gap-1 text-[12px] text-mute">{L('Expires (days)', 'Vence (días)')}<input className={cx(input, 'w-20')} inputMode="numeric" value={inv.days} onChange={(e) => setInv({ ...inv, days: e.target.value.replace(/\D/g, '') })} /></label>
+          <label className="grid gap-1 text-[12px] text-mute">{L('Starts on plan', 'Empieza en el plan')}<select className={input} value={inv.planId} onChange={(e) => setInv({ ...inv, planId: e.target.value })}><option value="">{L('(default)', '(por defecto)')}</option>{(plans.data ?? []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+          <Btn type="submit" variant="outline" size="sm" className="h-9">{L('Create code', 'Crear código')}</Btn>
+        </form>
+        <div className="overflow-x-auto"><table className="w-full text-[13px]"><tbody>{(invites.data ?? []).map((i) => (
+          <tr key={i.code} className={cx('border-t border-line', !i.active && 'opacity-50')}><td className="py-1.5 pr-2 font-mono">{i.code}</td><td className="text-mute">{i.note}</td><td className="text-right font-mono">{i.uses}/{i.maxUses}</td><td className="px-2 text-xs text-mute">{i.planId ?? ''}{i.expiresAt ? ` · ${new Date(i.expiresAt).toLocaleDateString()}` : ''}</td>
+            <td className="whitespace-nowrap text-right"><CopyBtn text={i.code} label="Copy" />{i.active && <IconBtn label="Revoke" className="h-8 w-8" onClick={() => act(api.del(`admin/invites/${i.code}`), L('Revoked.', 'Revocado.'), invites.reload)}><Trash2 size={14} /></IconBtn>}</td></tr>))}</tbody></table></div>
+      </div>
+      <div className={card}><Label>{L('Feedback from users', 'Feedback de usuarios')} ({fb.data?.length ?? 0})</Label>
+        {(fb.data ?? []).length === 0 ? <p className="text-sm text-mute">—</p> : <ul className="space-y-3">{fb.data!.map((x) => (
+          <li key={x.id} className="border-t border-line pt-2 first:border-t-0 first:pt-0 text-[13px]"><div className="flex items-center justify-between gap-2 text-xs text-mute"><span><b className="text-ink">{x.kind}</b> · {x.email ?? '—'} · {x.page} · {new Date(x.createdAt).toLocaleString()}</span><IconBtn label="Delete feedback" className="h-8 w-8" onClick={() => act(api.del(`admin/feedback/${x.id}`), L('Deleted.', 'Eliminado.'), fb.reload)}><Trash2 size={14} /></IconBtn></div><p className="mt-1 whitespace-pre-wrap">{x.message}</p></li>))}</ul>}
+      </div>
+      {st && <div className={card}><Label>{L('Legal contact (shown in Terms and Privacy)', 'Contacto legal (se muestra en Términos y Privacidad)')}</Label>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="grid gap-1 text-[13px]">{L('Legal name of the operator', 'Nombre legal del operador')}<input className={input} value={st.legalEntity} onChange={(e) => setSt({ ...st, legalEntity: e.target.value })} /></label>
+          <label className="grid gap-1 text-[13px]">{L('Contact email for legal/privacy', 'Correo de contacto legal/privacidad')}<input className={input} type="email" value={st.legalEmail} onChange={(e) => setSt({ ...st, legalEmail: e.target.value })} /></label>
+        </div>
+        <div className="mt-3"><Btn variant="primary" size="sm" onClick={() => act(api.put('admin/settings', { legalEntity: st.legalEntity, legalEmail: st.legalEmail }), L('Saved.', 'Guardado.'), settings.reload)}>{L('Save', 'Guardar')}</Btn></div>
+      </div>}
+    </div>
+  )
+}
+
 // ---- shell ----------------------------------------------------------------------------------
 export default function Admin() {
   const lang = useStore((s) => s.ui.lang)
   const user = useStore((s) => s.server.user)
-  const [tab, setTab] = useState<'finance' | 'ai' | 'people' | 'money'>('finance')
+  const [tab, setTab] = useState<'finance' | 'ai' | 'people' | 'billing' | 'beta' | 'money'>('finance')
   const L = (en: string, es: string) => tr(lang, en, es)
   if (user?.role !== 'admin') return <PageShell title="Admin"><p className="text-sm text-mute">{L('Admin access required.', 'Se requiere acceso de administrador.')}</p></PageShell>
-  const tabs = [['finance', L('Finance', 'Finanzas')], ['ai', L('AI & keys', 'IA y claves')], ['people', L('Users & plans', 'Usuarios y planes')], ['money', L('Payments & expenses', 'Pagos y gastos')]] as const
+  const tabs = [['finance', L('Finance', 'Finanzas')], ['ai', L('AI & keys', 'IA y claves')], ['people', L('Users & plans', 'Usuarios y planes')], ['billing', L('Billing (PayPal)', 'Cobros (PayPal)')], ['beta', L('Beta & legal', 'Beta y legal')], ['money', L('Payments & expenses', 'Pagos y gastos')]] as const
   return (
     <PageShell wide title={L('Admin', 'Administración')} sub={L('Keys, costs, revenue and customers.', 'Claves, costos, ingresos y clientes.')}>
       <div role="tablist" className="mb-5 flex gap-1 overflow-x-auto rounded-lg border border-line p-0.5">
@@ -320,6 +398,8 @@ export default function Admin() {
       {tab === 'finance' && <FinanceTab lang={lang} />}
       {tab === 'ai' && <AiTab lang={lang} />}
       {tab === 'people' && <PeopleTab lang={lang} />}
+      {tab === 'billing' && <BillingTab lang={lang} />}
+      {tab === 'beta' && <BetaTab lang={lang} />}
       {tab === 'money' && <MoneyTab lang={lang} />}
     </PageShell>
   )

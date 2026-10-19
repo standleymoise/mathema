@@ -12,6 +12,9 @@ import { SearchView, SettingsView, SourcesView } from './models/Misc'
 import { IconBtn, Toast, cx } from './common'
 import Admin from './admin/Admin'
 import AuthModal from './account/AuthModal'
+import FeedbackModal from './account/FeedbackModal'
+import Legal from './legal/Legal'
+import Pricing from './pricing/Pricing'
 import { server, ui, useStore, useT } from '../store/store'
 
 export default function App() {
@@ -48,7 +51,7 @@ export default function App() {
           </div>
         </header>
         <div className="flex min-h-0 flex-1 flex-col">
-          {s.view === 'universe' ? <Universe /> : s.view === 'models' ? <ModelsView /> : s.view === 'experiments' ? <ExperimentsView /> : s.view === 'sources' ? <SourcesView /> : s.view === 'settings' ? <SettingsView /> : s.view === 'search' ? <SearchView /> : s.view === 'admin' ? <Admin /> : (
+          {s.view === 'universe' ? <Universe /> : s.view === 'models' ? <ModelsView /> : s.view === 'experiments' ? <ExperimentsView /> : s.view === 'sources' ? <SourcesView /> : s.view === 'settings' ? <SettingsView /> : s.view === 'search' ? <SearchView /> : s.view === 'admin' ? <Admin /> : s.view === 'pricing' ? <Pricing /> : s.view === 'legal' ? <Legal /> : (
             <>
               <div className="scroll flex min-h-0 flex-1 flex-col">
                 {showWorkspace && model ? <Workspace key={`${model.id}:${model.version}`} model={model} /> : conv ? <Thread conv={conv} /> : <Welcome />}
@@ -67,6 +70,7 @@ export default function App() {
         </>
       )}
       <AuthModal />
+      <FeedbackModal />
       <Toast />
     </div>
   )

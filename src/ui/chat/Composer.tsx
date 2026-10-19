@@ -23,6 +23,7 @@ export default function Composer({ compact = false }: { compact?: boolean }) {
   const lang = useStore((s) => s.ui.lang)
   const mode = useStore((s) => s.ui.mode)
   const processing = useStore((s) => s.ui.processing)
+  const srv = useStore((s) => s.server)
   const selected = useStore((s) => s.db.models.find((m) => m.id === s.ui.selectedModelId))
   const [text, setText] = useState('')
   const [files, setFiles] = useState<AttachedFile[]>([])
@@ -142,6 +143,12 @@ export default function Composer({ compact = false }: { compact?: boolean }) {
           </div>
         </div>
       </div>
+      {srv.user && srv.usage && srv.aiAvailable && (
+        <p className="mt-2 px-2 text-center text-[11.5px] text-mute" aria-live="polite">
+          {tr(lang, `AI-assisted analyses this month: ${srv.usage.used}${srv.usage.quota !== null ? ` of ${srv.usage.quota}` : ''}`, `Análisis asistidos por IA este mes: ${srv.usage.used}${srv.usage.quota !== null ? ` de ${srv.usage.quota}` : ''}`)}
+          {srv.usage.quota !== null && srv.usage.used >= srv.usage.quota && <> · <button className="text-accent hover:underline" onClick={() => ui.setView('pricing')}>{tr(lang, 'See plans', 'Ver planes')}</button></>}
+        </p>
+      )}
       <p className="mt-2 hidden px-2 text-center text-[11.5px] text-mute sm:block">{tr(lang, 'Local heuristic analysis — no language model is called. Results are labelled by provenance; hypotheses are not evidence.', 'Análisis heurístico local — no se llama a ningún modelo de lenguaje. Los resultados indican su procedencia; las hipótesis no son evidencia.')}</p>
     </div>
   )

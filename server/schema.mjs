@@ -106,6 +106,29 @@ export const SCHEMA = [
     month CHAR(7) NOT NULL,
     recurring TINYINT(1) NOT NULL DEFAULT 0
   ) ${T}`,
+  `CREATE TABLE IF NOT EXISTS invites (
+    code VARCHAR(40) PRIMARY KEY,
+    note VARCHAR(160) NOT NULL DEFAULT '',
+    max_uses INT UNSIGNED NOT NULL DEFAULT 1,
+    uses INT UNSIGNED NOT NULL DEFAULT 0,
+    plan_id VARCHAR(32) NULL,
+    expires_at DATETIME NULL,
+    active TINYINT(1) NOT NULL DEFAULT 1,
+    created_at DATETIME NOT NULL
+  ) ${T}`,
+  `CREATE TABLE IF NOT EXISTS feedback (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT UNSIGNED NULL,
+    kind VARCHAR(12) NOT NULL DEFAULT 'other',
+    message TEXT NOT NULL,
+    page VARCHAR(120) NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL
+  ) ${T}`,
+  `CREATE TABLE IF NOT EXISTS billing_events (
+    event_id VARCHAR(80) PRIMARY KEY,
+    type VARCHAR(80) NOT NULL,
+    created_at DATETIME NOT NULL
+  ) ${T}`,
   `CREATE TABLE IF NOT EXISTS audit_log (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     user_id BIGINT UNSIGNED NULL,
@@ -127,10 +150,22 @@ export const SEED_PRICES = [
   ['anthropic', 'claude-sonnet-5-5', 'Claude Sonnet 5.5', 2, 10],
   ['anthropic', 'claude-opus-5-5', 'Claude Opus 5.5', 4, 20],
 ]
+// Columns added after the first release: applied idempotently by db.migrate() (works on MySQL and MariaDB).
+export const COLUMNS = [
+  ['plans', 'paypal_plan_id', 'VARCHAR(64) NULL'],
+  ['subscriptions', 'external_id', 'VARCHAR(64) NULL'],
+  ['users', 'terms_accepted_at', 'DATETIME NULL'],
+]
+export const STATUS_ENUM = "ALTER TABLE subscriptions MODIFY status ENUM('pending','active','trialing','past_due','canceled') NOT NULL DEFAULT 'active'"
 export const DEFAULT_SETTINGS = {
   ai_default: { provider: 'anthropic', model: 'claude-sonnet-5-5' },
   ai_research: { provider: 'anthropic', model: 'claude-opus-5-5' },
   ai_effort: 'medium',
-  signup_enabled: true,
+  signup_mode: 'open', // open | invite | closed
+  paypal_mode: 'sandbox',
+  paypal_client_id: '',
+  paypal_webhook_id: '',
+  legal_entity: '',
+  legal_email: '',
   daily_cap_per_user: 25,
 }

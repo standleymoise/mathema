@@ -7,6 +7,10 @@ import { dataRoutes } from './data.mjs'
 import { adminRoutes } from './admin.mjs'
 import { getSetting } from './db.mjs'
 import { keyStatus } from './keys.mjs'
+import { billingRoutes, paypalConfig } from './billing.mjs'
+import { accountRoutes } from './account.mjs'
+import { requireUser } from './auth.mjs'
+import rateLimit from 'express-rate-limit'
 
 export function createApp(pool, cfg, deps = {}) {
   const app = express()
@@ -34,9 +38,28 @@ export function createApp(pool, cfg, deps = {}) {
   api.get('/config', async (req, res) => {
     const def = await getSetting(pool, 'ai_default')
     const ks = await keyStatus(pool, def.provider)
-    res.json({ server: true, signupEnabled: await getSetting(pool, 'signup_enabled'), aiAvailable: ks.configured, user: req.user ? { id: req.user.id, email: req.user.email, name: req.user.name, role: req.user.role, planId: req.user.plan_id } : null })
+    const pc = await paypalConfig(pool, cfg)
+    res.json({
+      server: true, signupMode: await getSetting(pool, 'signup_mode'), aiAvailable: ks.configured, billingEnabled: pc.configured && !!pc.webhookId,
+      legal: { entity: await getSetting(pool, 'legal_entity'), email: await getSetting(pool, 'legal_email') },
+      user: req.user ? { id: req.user.id, email: req.user.email, name: req.user.name, role: req.user.role, planId: req.user.plan_id } : null,
+    })
+  })
+  api.get('/plans', async (_req, res) => {
+    const [rows] = await pool.query('SELECT id,name,price_cents priceCents,interval_unit intervalUnit,ai_monthly_quota aiMonthlyQuota,(paypal_plan_id IS NOT NULL AND paypal_plan_id<>\'\') purchasable FROM plans WHERE active=1 ORDER BY price_cents')
+    res.json(rows.map((p) => ({ ...p, purchasable: !!p.purchasable })))
+  })
+  const fbLimit = rateLimit({ windowMs: 60_000, limit: cfg.prod ? 5 : 1000, keyGenerator: (req) => `u${req.user?.id ?? req.ip}`, validate: { keyGeneratorIpFallback: false } })
+  api.post('/feedback', requireUser, fbLimit, async (req, res) => {
+    const message = String(req.body?.message ?? '').trim().slice(0, 2000)
+    if (message.length < 3) return res.status(400).json({ error: 'empty_message' })
+    const kind = ['bug', 'idea', 'other'].includes(req.body?.kind) ? req.body.kind : 'other'
+    await pool.query('INSERT INTO feedback (user_id,kind,message,page,created_at) VALUES (?,?,?,?,?)', [req.user.id, kind, message, String(req.body?.page ?? '').slice(0, 120), new Date()])
+    res.status(201).json({ ok: true })
   })
   api.use('/auth', authRoutes(pool, cfg))
+  api.use('/billing', billingRoutes(pool, cfg))
+  api.use('/account', accountRoutes(pool, cfg))
   api.use(analyzeRoutes(pool, cfg, deps))
   api.use(dataRoutes(pool))
   api.use('/admin', adminRoutes(pool, cfg))

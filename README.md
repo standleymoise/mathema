@@ -29,14 +29,14 @@ Demo data (temperature–yield curve, synthetic rainfall regression, ODE, LP, ca
 | Plans, quotas, cost tracking | no | yes |
 | Admin + finance (MRR, ARR, cost per app/model/user, margin) | no | yes |
 
-Deployment: **[docs/DEPLOY-HOSTINGER.md](docs/DEPLOY-HOSTINGER.md)**. Model selection: **[docs/EVAL.md](docs/EVAL.md)**.
+Guides: **[Hostinger deploy](docs/DEPLOY-HOSTINGER.md)** · **[model selection](docs/EVAL.md)** · **[PayPal billing](docs/BILLING-PAYPAL.md)** · **[closed beta](docs/BETA.md)** · **[legal checklist](docs/LEGAL-CHECKLIST.md)**.
 
 ## Honest limits
 
 * **Equations and data tables are never sent to an AI**: they are solved deterministically (exact, free). AI is used only for ideas without equations or data, and its output is a *proposal* that MATHEMA re-validates (every expression parsed by our own engine, ODEs integrated, LP checked) and labels as a system hypothesis. If validation or the AI fails, the local analyzer is used and the message says so.
 * **No language model runs in the static demo**; the analyzer there is deterministic rules and every message says so.
 * **Prices are yours to maintain**: costs = tokens × the per-million-token prices entered in the Admin panel (Anthropic defaults are pre-filled; verify them). A model without a price is flagged, never silently invented.
-* **MRR/ARR come from subscriptions and payments recorded in the admin panel** until a payment provider is connected (next step).
+* **MRR/ARR come from PayPal subscriptions** (verified webhooks) plus any subscriptions/payments you record by hand. Revenue is gross, USD only.
 * PDFs and images can be attached as *references* but their content is not read (no OCR/vision). Text, Markdown, JSON and CSV are read.
 * Models generated from free text use **placeholder parameters**, labelled as hypotheses. Fits are not validation; correlation is not causation.
 

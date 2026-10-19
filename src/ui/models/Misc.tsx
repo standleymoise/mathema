@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Download, Moon, RotateCcw, Sun, Trash2 } from 'lucide-react'
-import { Btn, Confirm, EmptyState, IconBtn, Label, cx } from '../common'
+import { Btn, Confirm, EmptyState, IconBtn, Label, Modal, cx } from '../common'
 import { PageShell } from './Lists'
 import { records, server, ui, useStore, useT } from '../../store/store'
 import { repository } from '../../services/repository'
@@ -47,6 +47,8 @@ export function SettingsView() {
   const s = useStore((x) => x.ui)
   const srv = useStore((x) => x.server)
   const [confirm, setConfirm] = useState(false)
+  const [pwOpen, setPwOpen] = useState(false), [delOpen, setDelOpen] = useState(false)
+  const [cur, setCur] = useState(''), [nxt, setNxt] = useState(''), [delPw, setDelPw] = useState(''), [formErr, setFormErr] = useState<string | null>(null)
   const Row = ({ k, children }: { k: string; children: React.ReactNode }) => <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line py-3.5 first:border-t-0"><span className="text-sm">{k}</span><div>{children}</div></div>
   const Seg = <T extends string>({ value, opts, onChange }: { value: T; opts: [T, string][]; onChange: (v: T) => void }) => (
     <div role="group" className="flex rounded-lg border border-line p-0.5">{opts.map(([v, l]) => <button key={v} aria-pressed={value === v} onClick={() => onChange(v)} className={cx('h-9 rounded-md px-3.5 text-sm font-medium', value === v ? 'bg-accent-soft text-accent' : 'text-mute hover:text-ink')}>{l}</button>)}</div>
@@ -64,7 +66,7 @@ export function SettingsView() {
             <Row k={srv.user.email}><span className="text-mute">{srv.user.role === 'admin' ? 'admin · ' : ''}{srv.usage?.plan ?? srv.user.planId}</span></Row>
             <Row k={tr(s.lang, 'AI analyses this month', 'Análisis de IA este mes')}><span className="font-mono text-mute">{srv.usage ? `${srv.usage.used} / ${srv.usage.quota ?? '∞'}` : '…'}</span></Row>
             <Row k={tr(s.lang, 'Cloud sync', 'Sincronización')}><span className="text-mute">{srv.sync === 'saving' ? '…' : srv.sync === 'error' ? tr(s.lang, 'error — will retry on the next change', 'error — se reintentará en el próximo cambio') : tr(s.lang, 'up to date', 'al día')}</span></Row>
-            <Row k=""><Btn variant="outline" size="sm" onClick={() => void server.logout()}>{tr(s.lang, 'Sign out', 'Cerrar sesión')}</Btn></Row></>
+            <Row k=""><div className="flex flex-wrap gap-2"><Btn variant="outline" size="sm" onClick={() => ui.setView('pricing')}>{tr(s.lang, 'Plans', 'Planes')}</Btn><Btn variant="outline" size="sm" onClick={() => { setFormErr(null); setPwOpen(true) }}>{tr(s.lang, 'Change password', 'Cambiar contraseña')}</Btn><Btn variant="outline" size="sm" onClick={records.exportJson}>{tr(s.lang, 'Download my data', 'Descargar mis datos')}</Btn><Btn variant="outline" size="sm" onClick={() => void server.logout()}>{tr(s.lang, 'Sign out', 'Cerrar sesión')}</Btn><Btn variant="ghost" size="sm" className="text-bad" onClick={() => { setFormErr(null); setDelOpen(true) }}>{tr(s.lang, 'Delete my account', 'Eliminar mi cuenta')}</Btn></div></Row></>
           : <Row k={tr(s.lang, 'Not signed in', 'Sin sesión')}><Btn variant="primary" size="sm" onClick={() => ui.setAuthOpen(true)}>{tr(s.lang, 'Sign in / create account', 'Iniciar sesión / crear cuenta')}</Btn></Row>}
       </section>
       <h2 className="serif mb-2 mt-8 text-xl">{tr(s.lang, 'System status', 'Estado del sistema')}</h2>
@@ -80,6 +82,22 @@ export function SettingsView() {
         <Btn variant="outline" onClick={() => setConfirm(true)}><RotateCcw size={15} />{t('resetDemo')}</Btn>
         <Btn variant="ghost" onClick={() => ui.setTheme(s.theme === 'dark' ? 'light' : 'dark')}>{s.theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}{s.theme === 'dark' ? t('light') : t('dark')}</Btn>
       </div>
+      <Modal open={pwOpen} onClose={() => setPwOpen(false)} title={tr(s.lang, 'Change password', 'Cambiar contraseña')}>
+        <form className="grid gap-3" onSubmit={async (e) => { e.preventDefault(); const err = await server.changePassword(cur, nxt); if (err) setFormErr(err); else { setPwOpen(false); setCur(''); setNxt('') } }}>
+          <input type="password" autoComplete="current-password" required value={cur} onChange={(e) => setCur(e.target.value)} aria-label={tr(s.lang, 'Current password', 'Contraseña actual')} placeholder={tr(s.lang, 'Current password', 'Contraseña actual')} className="h-11 rounded-lg border border-line bg-bg px-3 text-sm outline-none focus:border-accent" />
+          <input type="password" autoComplete="new-password" required minLength={10} value={nxt} onChange={(e) => setNxt(e.target.value)} aria-label={tr(s.lang, 'New password', 'Contraseña nueva')} placeholder={tr(s.lang, 'New password (10+ characters)', 'Contraseña nueva (10+ caracteres)')} className="h-11 rounded-lg border border-line bg-bg px-3 text-sm outline-none focus:border-accent" />
+          {formErr && <p role="alert" className="text-sm text-bad">{formErr}</p>}
+          <Btn type="submit" variant="primary">{tr(s.lang, 'Change password', 'Cambiar contraseña')}</Btn>
+        </form>
+      </Modal>
+      <Modal open={delOpen} onClose={() => setDelOpen(false)} title={tr(s.lang, 'Delete your account?', '¿Eliminar tu cuenta?')}>
+        <form className="grid gap-3" onSubmit={async (e) => { e.preventDefault(); const err = await server.deleteAccount(delPw); if (err) setFormErr(err); else { setDelOpen(false); setDelPw('') } }}>
+          <p className="text-sm leading-relaxed text-mute">{tr(s.lang, 'This permanently deletes your profile, models, conversations and feedback, and cancels any PayPal subscription. It cannot be undone. Download your data first if you want a copy.', 'Esto elimina de forma permanente tu perfil, modelos, conversaciones y feedback, y cancela cualquier suscripción de PayPal. No se puede deshacer. Descargá tus datos antes si querés una copia.')}</p>
+          <input type="password" autoComplete="current-password" required value={delPw} onChange={(e) => setDelPw(e.target.value)} aria-label={tr(s.lang, 'Password', 'Contraseña')} placeholder={tr(s.lang, 'Confirm with your password', 'Confirmá con tu contraseña')} className="h-11 rounded-lg border border-line bg-bg px-3 text-sm outline-none focus:border-accent" />
+          {formErr && <p role="alert" className="text-sm text-bad">{formErr}</p>}
+          <Btn type="submit" variant="danger">{tr(s.lang, 'Delete my account', 'Eliminar mi cuenta')}</Btn>
+        </form>
+      </Modal>
       <Confirm open={confirm} title={t('resetDemo')} body={tr(s.lang, 'This replaces ALL local data (your models, conversations and sources) with the original demo set.', 'Esto reemplaza TODOS los datos locales (modelos, conversaciones y fuentes) por el conjunto demo original.')} onNo={() => setConfirm(false)} onYes={() => { setConfirm(false); records.resetDemo() }} />
     </PageShell>
   )

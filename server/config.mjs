@@ -18,6 +18,8 @@ export function loadConfig(overrides = {}) {
     adminPassword: env.ADMIN_PASSWORD || '',
     distDir: env.DIST_DIR || new URL('../dist', import.meta.url).pathname,
     trustProxy: env.TRUST_PROXY !== '0',
+    publicUrl: (env.PUBLIC_URL || '').replace(/\/+$/, ''),
+    paypalApiBase: env.PAYPAL_API_BASE || '',
     ...overrides,
   }
   if (!cfg.appSecret) {

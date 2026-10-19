@@ -1,4 +1,4 @@
-import { BookMarked, FlaskConical, Library, LogIn, MessageSquare, Network, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, ShieldCheck, Sigma, X } from 'lucide-react'
+import { BookMarked, CreditCard, FlaskConical, Library, LogIn, MessageSquarePlus, MessageSquare, Network, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, ShieldCheck, Sigma, X } from 'lucide-react'
 import { cx, IconBtn } from '../common'
 import { ui, useStore, useT, type View } from '../../store/store'
 import type { Key } from '../../i18n'
@@ -65,7 +65,10 @@ export default function Sidebar() {
           {srv.user?.role === 'admin' && <Item active={s.view === 'admin'} icon={ShieldCheck} label="Admin" onClick={() => ui.setView('admin')} />}
           {srv.available && !srv.user && <Item active={false} icon={LogIn} label={s.lang === 'es' ? 'Iniciar sesión' : 'Sign in'} onClick={() => { ui.setAuthOpen(true); ui.setSidebarMobile(false) }} />}
           {srv.user && <div className={cx('truncate px-3 py-1 text-[12px] text-mute', collapsed && 'lg:hidden')} title={srv.user.email}>{srv.user.email}{srv.sync === 'saving' ? ' · …' : srv.sync === 'error' ? ' · ⚠ sync' : ''}</div>}
+          {srv.available && <Item active={s.view === 'pricing'} icon={CreditCard} label={s.lang === 'es' ? 'Planes' : 'Plans'} onClick={() => ui.setView('pricing')} />}
+          {srv.user && <Item active={false} icon={MessageSquarePlus} label={s.lang === 'es' ? 'Enviar feedback' : 'Send feedback'} onClick={() => { ui.setFeedbackOpen(true); ui.setSidebarMobile(false) }} />}
           <Item active={s.view === 'settings'} icon={Settings} label={t('settings')} onClick={() => ui.setView('settings')} />
+          <div className={cx('flex gap-3 px-3 pb-1 pt-1 text-[11px] text-mute', collapsed && 'lg:hidden')}><button className="hover:text-ink hover:underline" onClick={() => ui.openLegal('terms')}>{s.lang === 'es' ? 'Términos' : 'Terms'}</button><button className="hover:text-ink hover:underline" onClick={() => ui.openLegal('privacy')}>{s.lang === 'es' ? 'Privacidad' : 'Privacy'}</button><button className="hover:text-ink hover:underline" onClick={() => ui.openLegal('ai')}>{s.lang === 'es' ? 'Aviso IA' : 'AI notice'}</button></div>
         </div>
       </nav>
     </>

@@ -8,7 +8,7 @@ async function req<T = any>(method: string, path: string, body?: unknown): Promi
   try {
     const res = await fetch(base() + path.replace(/^\//, ''), {
       method, credentials: 'same-origin',
-      headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+      headers: { 'X-Requested-With': 'mathema', ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     })
     const ct = res.headers.get('content-type') ?? ''

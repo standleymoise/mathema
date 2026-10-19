@@ -13,7 +13,9 @@ import { baseParams, sensitivity } from '../core/engine/runtime'
 import { now, tr, uid } from '../core/text'
 import { translate, type Key } from '../i18n'
 
-export type View = 'chat' | 'models' | 'experiments' | 'universe' | 'sources' | 'settings' | 'search' | 'admin'
+export type View = 'chat' | 'models' | 'experiments' | 'universe' | 'sources' | 'settings' | 'search' | 'admin' | 'pricing' | 'legal'
+export type LegalDoc = 'terms' | 'privacy' | 'ai'
+export interface PlanPub { id: string; name: string; priceCents: number; intervalUnit: 'month' | 'year'; aiMonthlyQuota: number | null; purchasable: boolean }
 export type Tab = 'conversation' | 'workspace'
 
 interface UI {
@@ -32,11 +34,16 @@ interface UI {
   searchQuery: string
   focusId: string | null
   authOpen: boolean
+  feedbackOpen: boolean
+  legalDoc: LegalDoc
 }
 interface ServerState {
   checked: boolean
   available: boolean
-  signupEnabled: boolean
+  signupMode: 'open' | 'invite' | 'closed'
+  billingEnabled: boolean
+  legal: { entity: string; email: string }
+  plans: PlanPub[]
   aiAvailable: boolean
   user: ServerUser | null
   sync: 'idle' | 'saving' | 'saved' | 'error'
@@ -52,11 +59,11 @@ function loadUI(): UI {
   return {
     lang: saved.lang === 'es' ? 'es' : 'en', theme, sidebarCollapsed: !!saved.sidebarCollapsed, sidebarOpenMobile: false,
     detailsOpen: typeof innerWidth === 'number' ? innerWidth >= 1280 : true, view: 'chat', mode: 'model', activeConvId: null, selectedModelId: null, tab: 'conversation',
-    processing: null, toast: null, searchQuery: '', focusId: null, authOpen: false,
+    processing: null, toast: null, searchQuery: '', focusId: null, authOpen: false, feedbackOpen: false, legalDoc: 'terms',
   }
 }
 
-let state: State = { db: repository.load(), ui: loadUI(), server: { checked: false, available: false, signupEnabled: false, aiAvailable: false, user: null, sync: 'idle', usage: null } }
+let state: State = { db: repository.load(), ui: loadUI(), server: { checked: false, available: false, signupMode: 'closed', billingEnabled: false, legal: { entity: '', email: '' }, plans: [], aiAvailable: false, user: null, sync: 'idle', usage: null } }
 const listeners = new Set<() => void>()
 const emit = () => listeners.forEach((l) => l())
 export const subscribe = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l) } }
@@ -96,6 +103,8 @@ export const ui = {
   setTab: (tab: Tab) => setUI({ tab }),
   setSearch: (searchQuery: string) => setUI({ searchQuery }),
   setAuthOpen: (authOpen: boolean) => setUI({ authOpen }),
+  setFeedbackOpen: (feedbackOpen: boolean) => setUI({ feedbackOpen }),
+  openLegal: (legalDoc: LegalDoc) => setUI({ view: 'legal', legalDoc, authOpen: false, sidebarOpenMobile: false }),
   openSource: (id: string) => setUI({ view: 'sources', focusId: id, sidebarOpenMobile: false }),
   openInUniverse: (id: string) => setUI({ view: 'universe', focusId: id, sidebarOpenMobile: false }),
   clearFocus: () => setUI({ focusId: null }),
@@ -283,7 +292,7 @@ export async function sendMessage(text: string, files: AttachedFile[] = []) {
         if (r.quota) setServer({ usage: { ...(state.server.usage ?? { plan: '', resetsAt: '' }), used: r.quota.used, quota: r.quota.quota } })
       } catch (e) {
         const u = e instanceof AIUnavailable ? e : null
-        const why = u?.code === 'quota_exceeded' ? L(`monthly AI quota reached (${u.extra.used}/${u.extra.quota})`, `cuota mensual de IA alcanzada (${u.extra.used}/${u.extra.quota})`)
+        const why = u?.code === 'quota_exceeded' ? L(`monthly AI quota reached (${u.extra.used}/${u.extra.quota}); see Plans in the sidebar to get more`, `cuota mensual de IA alcanzada (${u.extra.used}/${u.extra.quota}); mirá Planes en la barra lateral para tener más`)
           : u?.code === 'daily_cap_reached' ? L('daily AI limit reached', 'límite diario de IA alcanzado')
           : u?.code === 'rejected_by_engine' ? L(`the AI proposal failed validation (${u.message})`, `la propuesta de la IA no pasó la validación (${u.message})`)
           : L(`AI unavailable (${u?.message ?? 'error'})`, `IA no disponible (${u?.message ?? 'error'})`)
@@ -418,13 +427,31 @@ async function loadUsage() {
 
 export const server = {
   async init() {
-    const r = await api.get<{ server: boolean; signupEnabled: boolean; aiAvailable: boolean; user: ServerUser | null }>('config')
+    const r = await api.get<{ server: boolean; signupMode: ServerState['signupMode']; aiAvailable: boolean; billingEnabled: boolean; legal: ServerState['legal']; user: ServerUser | null }>('config')
     if (!r.ok || !r.data?.server) { setServer({ checked: true, available: false }); return }
-    setServer({ checked: true, available: true, signupEnabled: r.data.signupEnabled, aiAvailable: r.data.aiAvailable, user: r.data.user })
+    setServer({ checked: true, available: true, signupMode: r.data.signupMode, aiAvailable: r.data.aiAvailable, billingEnabled: r.data.billingEnabled, legal: r.data.legal, user: r.data.user })
+    void server.loadPlans()
     if (r.data.user) { await pullAndMerge(r.data.user); void loadUsage() }
+    // coming back from PayPal: /?billing=success|pending|cancel|mismatch|unknown
+    try {
+      const b = new URLSearchParams(location.search).get('billing')
+      if (b) {
+        history.replaceState(null, '', location.pathname)
+        const L = (en: string, es: string) => tr(state.ui.lang, en, es)
+        if (b === 'success') toast(L('Subscription active. Thank you!', 'Suscripción activa. ¡Gracias!'))
+        else if (b === 'pending') toast(L('Payment received; activating your plan (this can take a minute).', 'Pago recibido; activando tu plan (puede tardar un minuto).'), 'warn')
+        else if (b === 'cancel') toast(L('Checkout canceled. You have not been charged.', 'Pago cancelado. No se te cobró nada.'), 'warn')
+        else toast(L('We could not verify that checkout. If you were charged, contact support.', 'No pudimos verificar ese pago. Si se te cobró, contactá a soporte.'), 'bad')
+        ui.setView('pricing')
+      }
+    } catch { /* ignore */ }
   },
-  async authenticate(mode: 'login' | 'register', email: string, password: string, name = ''): Promise<string | null> {
-    const r = await api.post<{ user?: ServerUser; error?: string; detail?: string }>(`auth/${mode}`, { email, password, name })
+  async loadPlans() {
+    const r = await api.get<PlanPub[]>('plans')
+    if (r.ok) setServer({ plans: r.data })
+  },
+  async authenticate(mode: 'login' | 'register', email: string, password: string, name = '', extra: { inviteCode?: string; acceptTerms?: boolean } = {}): Promise<string | null> {
+    const r = await api.post<{ user?: ServerUser; error?: string; detail?: string }>(`auth/${mode}`, { email, password, name, ...extra })
     if (!r.ok || !r.data?.user) {
       const code = r.data?.error ?? (r.status === 0 ? 'offline' : 'error')
       const msg: Record<string, [string, string]> = {
@@ -432,6 +459,8 @@ export const server = {
         weak_password: ['Use at least 10 characters.', 'Usá al menos 10 caracteres.'], invalid_email: ['That email does not look valid.', 'Ese correo no parece válido.'],
         signup_disabled: ['Sign-ups are closed.', 'El registro está cerrado.'], too_many_attempts: ['Too many attempts. Wait a few minutes.', 'Demasiados intentos. Esperá unos minutos.'],
         offline: ['Cannot reach the server.', 'No se pudo contactar al servidor.'],
+        terms_required: ['Please accept the Terms and the Privacy Policy.', 'Aceptá los Términos y la Política de Privacidad.'], invite_required: ['An invitation code is required during the closed beta.', 'Hace falta un código de invitación durante la beta cerrada.'],
+        invite_invalid: ['That invitation code is invalid, used up or expired.', 'Ese código de invitación no es válido, se agotó o venció.'],
       }
       const m = msg[code] ?? ['Something went wrong.', 'Algo salió mal.']
       return tr(state.ui.lang, m[0], m[1])
@@ -459,4 +488,43 @@ export const server = {
     } else toast(tr(state.ui.lang, 'Signed out, but the last changes could not be saved to your account; they remain on this device.', 'Sesión cerrada, pero los últimos cambios no se pudieron guardar en tu cuenta; quedan en este dispositivo.'), 'warn')
   },
   refreshUsage: loadUsage,
+  async refreshUser() {
+    const r = await api.get<{ user: ServerUser | null }>('auth/me')
+    if (r.ok) setServer({ user: r.data.user })
+    void loadUsage()
+  },
+  async checkout(planId: string) {
+    const L = (en: string, es: string) => tr(state.ui.lang, en, es)
+    const r = await api.post<{ approveUrl?: string; error?: string; detail?: string }>('billing/checkout', { planId })
+    if (r.ok && r.data.approveUrl) { window.location.assign(r.data.approveUrl); return }
+    toast(r.data?.error === 'already_subscribed' ? L('You already have this plan.', 'Ya tenés este plan.') : r.data?.error === 'billing_not_configured' ? L('Payments are not enabled yet.', 'Los pagos todavía no están habilitados.') : L(`Could not start checkout (${r.data?.detail ?? r.data?.error ?? 'error'}).`, `No se pudo iniciar el pago (${r.data?.detail ?? r.data?.error ?? 'error'}).`), 'bad')
+  },
+  async cancelSubscription() {
+    const L = (en: string, es: string) => tr(state.ui.lang, en, es)
+    const r = await api.post('billing/cancel', {})
+    if (r.ok) { toast(L('Subscription canceled.', 'Suscripción cancelada.')); await server.refreshUser() } else toast(L('Could not cancel. Try again or contact support.', 'No se pudo cancelar. Reintentá o contactá a soporte.'), 'bad')
+  },
+  async changePassword(current: string, next: string): Promise<string | null> {
+    const L = (en: string, es: string) => tr(state.ui.lang, en, es)
+    const r = await api.post<{ error?: string }>('auth/password', { current, next })
+    if (r.ok) return null
+    return r.data?.error === 'invalid_credentials' ? L('Current password is wrong.', 'La contraseña actual es incorrecta.') : r.data?.error === 'weak_password' ? L('Use at least 10 characters.', 'Usá al menos 10 caracteres.') : L('Could not change the password.', 'No se pudo cambiar la contraseña.')
+  },
+  async deleteAccount(password: string): Promise<string | null> {
+    const L = (en: string, es: string) => tr(state.ui.lang, en, es)
+    const r = await api.post<{ error?: string; detail?: string }>('account/delete', { password })
+    if (!r.ok) return r.data?.error === 'invalid_credentials' ? L('Wrong password.', 'Contraseña incorrecta.') : r.data?.detail ?? L('Could not delete the account.', 'No se pudo eliminar la cuenta.')
+    clearTimeout(syncTimer)
+    try { localStorage.removeItem(SYNCED_KEY) } catch { /* ignore */ }
+    setServer({ user: null, usage: null, sync: 'idle' })
+    applyingRemote = true
+    state = { ...state, db: repository.reset(), ui: { ...state.ui, activeConvId: null, selectedModelId: null, view: 'chat', tab: 'conversation' } }
+    emit(); applyingRemote = false
+    toast(L('Account deleted.', 'Cuenta eliminada.'))
+    return null
+  },
+  async sendFeedback(kind: string, message: string, page: string): Promise<boolean> {
+    const r = await api.post('feedback', { kind, message, page })
+    return r.ok
+  },
 }

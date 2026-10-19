@@ -1,5 +1,6 @@
 import { beforeAll, afterAll, describe, expect, it } from 'vitest'
 import request from 'supertest'
+import http from 'node:http'
 import { createPool, migrate } from './db.mjs'
 import { createApp } from './app.mjs'
 import { decrypt, encrypt, hashPassword, verifyPassword } from './crypto.mjs'
@@ -91,7 +92,7 @@ let pool, up = false
 try { pool = createPool(dbCfg); await pool.query('SELECT 1'); up = true } catch { /* no db */ }
 
 describe.skipIf(!up)('HTTP API on MySQL', () => {
-  const cfg = { prod: false, appSecret: 'x'.repeat(40), adminEmail: 'boss@example.com', adminPassword: 'admin-password-123', distDir: '/nonexistent', trustProxy: false }
+  const cfg = { prod: false, appSecret: 'x'.repeat(40), adminEmail: 'boss@example.com', adminPassword: 'admin-password-123', distDir: '/nonexistent', trustProxy: false, publicUrl: 'https://mathema.example', paypalApiBase: '' }
   let app, admin, user
   const calls = []
   const fakeCall = async (args) => {
@@ -104,7 +105,7 @@ describe.skipIf(!up)('HTTP API on MySQL', () => {
     for (const row of t) await pool.query(`DROP TABLE \`${Object.values(row)[0]}\``)
     await migrate(pool, cfg)
     app = createApp(pool, cfg, { call: { anthropic: fakeCall, openai: fakeCall } })
-    admin = request.agent(app); user = request.agent(app)
+    admin = request.agent(app).set('X-Requested-With', 'mathema'); user = request.agent(app).set('X-Requested-With', 'mathema')
   })
   afterAll(async () => { await pool?.end() })
 
@@ -114,9 +115,10 @@ describe.skipIf(!up)('HTTP API on MySQL', () => {
     expect(r.status).toBe(200); expect(r.body.user.role).toBe('admin')
   })
   it('registers users with validation, sets an HttpOnly cookie, and blocks cross-origin writes', async () => {
-    expect((await user.post('/api/auth/register').send({ email: 'bad', password: 'long-enough-pw' })).status).toBe(400)
-    expect((await user.post('/api/auth/register').send({ email: 'u@example.com', password: 'short' })).status).toBe(400)
-    const r = await user.post('/api/auth/register').send({ email: 'u@example.com', password: 'long-enough-pw', name: 'U' })
+    expect((await user.post('/api/auth/register').send({ email: 'u@example.com', password: 'long-enough-pw' })).status).toBe(400) // terms not accepted
+    expect((await user.post('/api/auth/register').send({ email: 'bad', password: 'long-enough-pw', acceptTerms: true })).status).toBe(400)
+    expect((await user.post('/api/auth/register').send({ email: 'u@example.com', password: 'short', acceptTerms: true })).status).toBe(400)
+    const r = await user.post('/api/auth/register').send({ email: 'u@example.com', password: 'long-enough-pw', name: 'U', acceptTerms: true })
     expect(r.status).toBe(201)
     expect(r.headers['set-cookie'][0]).toMatch(/HttpOnly/)
     expect((await request(app).post('/api/auth/login').set('Origin', 'https://evil.example').send({ email: 'u@example.com', password: 'long-enough-pw' })).status).toBe(403)
@@ -181,5 +183,151 @@ describe.skipIf(!up)('HTTP API on MySQL', () => {
     expect((await admin.patch(`/api/admin/users/${u.id}`).send({ role: 'user' })).status).toBe(200)
     const [[a]] = await pool.query("SELECT id FROM users WHERE email='boss@example.com'")
     expect((await admin.patch(`/api/admin/users/${a.id}`).send({ role: 'user' })).status).toBe(400) // last admin protected
+  })
+
+  // ---------- step 4-7: plans, PayPal billing, legal consent, closed beta ----------
+  describe('billing, beta and account', () => {
+    const pp = { status: 'ACTIVE', custom: '', calls: [], server: null }
+    const E = (over) => ({ id: `WH-${Math.random().toString(36).slice(2)}`, event_type: 'X', resource: {}, ...over })
+    beforeAll(async () => {
+      pp.server = http.createServer((req, res) => {
+        let b = ''; req.on('data', (c) => (b += c)); req.on('end', () => {
+          pp.calls.push(`${req.method} ${req.url}`); res.setHeader('content-type', 'application/json')
+          if (req.url === '/v1/oauth2/token') return req.headers.authorization === `Basic ${Buffer.from('CID:SECRET123456').toString('base64')}` ? res.end('{"access_token":"tok","expires_in":300}') : (res.statusCode = 401, res.end('{}'))
+          if (req.headers.authorization !== 'Bearer tok') return (res.statusCode = 401, res.end('{}'))
+          if (req.method === 'POST' && req.url === '/v1/billing/subscriptions') { const j = JSON.parse(b); pp.custom = j.custom_id; return res.end(JSON.stringify({ id: 'I-TEST123', links: [{ rel: 'approve', href: 'https://paypal.test/approve/I-TEST123' }] })) }
+          if (req.method === 'GET' && req.url === '/v1/billing/subscriptions/I-TEST123') return res.end(JSON.stringify({ id: 'I-TEST123', status: pp.status, custom_id: pp.custom }))
+          if (req.url.endsWith('/cancel')) return (res.statusCode = 204, res.end())
+          if (req.url === '/v1/notifications/verify-webhook-signature') return res.end(JSON.stringify({ verification_status: JSON.parse(b).transmission_sig === 'good' ? 'SUCCESS' : 'FAILURE' }))
+          res.statusCode = 404; res.end('{}')
+        })
+      })
+      await new Promise((r) => pp.server.listen(0, '127.0.0.1', r))
+      cfg.paypalApiBase = `http://127.0.0.1:${pp.server.address().port}`
+    })
+    afterAll(() => pp.server?.close())
+    const hook = (ev, sig = 'good') => request(app).post('/api/billing/paypal/webhook').set({ 'paypal-transmission-sig': sig, 'paypal-transmission-id': 't', 'paypal-transmission-time': 'x', 'paypal-auth-algo': 'a', 'paypal-cert-url': 'c' }).send(ev)
+
+    it('lists public plans and blocks checkout until PayPal is configured', async () => {
+      const plans = (await request(app).get('/api/plans')).body
+      expect(plans.map((p) => p.id)).toEqual(expect.arrayContaining(['free', 'pro'])); expect(plans.find((p) => p.id === 'pro').purchasable).toBe(false)
+      expect((await user.post('/api/billing/checkout').send({ planId: 'pro' })).status).toBe(503)
+    })
+    it('admin configures PayPal; secret is encrypted and never returned', async () => {
+      expect((await admin.put('/api/admin/paypal').send({ mode: 'sandbox', clientId: 'CID', webhookId: 'WHID', secret: 'SECRET123456' })).status).toBe(200)
+      const [[row]] = await pool.query("SELECT ciphertext FROM api_keys WHERE provider='paypal'")
+      expect(row.ciphertext).not.toContain('SECRET'); expect(JSON.stringify((await admin.get('/api/admin/paypal')).body)).not.toContain('SECRET123456')
+      expect((await admin.post('/api/admin/paypal/test').send({})).body.ok).toBe(true)
+      expect((await admin.put('/api/admin/plans').send({ id: 'pro', name: 'Pro', priceCents: 1200, aiMonthlyQuota: 300, paypalPlanId: 'bad id' })).status).toBe(400)
+      expect((await admin.put('/api/admin/plans').send({ id: 'pro', name: 'Pro', priceCents: 1200, aiMonthlyQuota: 300, paypalPlanId: 'P-TESTPLAN123456' })).status).toBe(200)
+      expect((await request(app).get('/api/plans')).body.find((p) => p.id === 'pro').purchasable).toBe(true)
+    })
+    it('checkout creates a pending subscription that does not count as MRR; /return verifies with PayPal', async () => {
+      await pool.query("UPDATE subscriptions SET status='canceled', canceled_at=NOW() WHERE source='manual'"); await pool.query("UPDATE users SET plan_id='free'")
+      const [[u]] = await pool.query("SELECT id FROM users WHERE email='u@example.com'")
+      const c = await user.post('/api/billing/checkout').send({ planId: 'pro' })
+      expect(c.status).toBe(200); expect(c.body.approveUrl).toContain('paypal.test/approve')
+      expect((await admin.get('/api/admin/finance')).body.kpis.mrr).toBe(0)
+      expect((await user.post('/api/billing/checkout').send({ planId: 'free' })).status).toBe(400)
+      pp.custom = 'u999999' // PayPal says it belongs to someone else: must be rejected
+      expect((await request(app).get('/api/billing/return?subscription_id=I-TEST123')).headers.location).toBe('/?billing=mismatch')
+      pp.custom = `u${u.id}`; pp.status = 'APPROVAL_PENDING'
+      expect((await request(app).get('/api/billing/return?subscription_id=I-TEST123')).headers.location).toBe('/?billing=pending')
+      expect((await request(app).get('/api/billing/return?subscription_id=NOPE')).headers.location).toBe('/?billing=unknown')
+      pp.status = 'ACTIVE'
+      expect((await request(app).get('/api/billing/return?subscription_id=I-TEST123')).headers.location).toBe('/?billing=success')
+      expect((await user.get('/api/auth/me')).body.user.planId).toBe('pro')
+      expect((await admin.get('/api/admin/finance')).body.kpis.mrr).toBe(12)
+    })
+    it('webhooks: rejects bad signatures, records payments once, handles cancel', async () => {
+      const sale = E({ event_type: 'PAYMENT.SALE.COMPLETED', resource: { id: 'SALE1', billing_agreement_id: 'I-TEST123', amount: { total: '12.00', currency: 'USD' } } })
+      expect((await hook(sale, 'forged')).status).toBe(400)
+      const [[n0]] = await pool.query("SELECT COUNT(*) n FROM payments WHERE source='paypal'"); expect(Number(n0.n)).toBe(0)
+      expect((await hook(sale)).body.result).toBe('applied')
+      expect((await hook(sale)).body.result).toBe('duplicate') // PayPal retries: no double revenue
+      const [[n1]] = await pool.query("SELECT COUNT(*) n, SUM(amount_cents) c FROM payments WHERE source='paypal'"); expect(Number(n1.n)).toBe(1); expect(Number(n1.c)).toBe(1200)
+      expect((await hook(E({ event_type: 'PAYMENT.SALE.COMPLETED', resource: { id: 'S2', billing_agreement_id: 'I-TEST123', amount: { total: '5.00', currency: 'EUR' } } }))).status).toBe(200)
+      const [[n2]] = await pool.query("SELECT COUNT(*) n FROM payments WHERE source='paypal'"); expect(Number(n2.n)).toBe(1) // non-USD is not summed into USD revenue
+      await hook(E({ event_type: 'BILLING.SUBSCRIPTION.SUSPENDED', resource: { id: 'I-TEST123' } }))
+      const f1 = (await admin.get('/api/admin/finance')).body.kpis; expect(f1.mrr).toBe(0); expect(f1.atRiskMrr).toBe(12)
+      await hook(E({ event_type: 'BILLING.SUBSCRIPTION.CANCELLED', resource: { id: 'I-TEST123' } }))
+      expect((await user.get('/api/auth/me')).body.user.planId).toBe('free')
+    })
+    it('webhook is refused when no webhook id is configured', async () => {
+      await admin.put('/api/admin/paypal').send({ webhookId: '' })
+      expect((await hook(E({ event_type: 'X' }))).status).toBe(503)
+      await admin.put('/api/admin/paypal').send({ webhookId: 'WHID' })
+    })
+    it('lets a customer cancel their PayPal subscription', async () => {
+      pp.status = 'ACTIVE'
+      const [[u]] = await pool.query("SELECT id FROM users WHERE email='u@example.com'")
+      await pool.query("INSERT INTO subscriptions (user_id,plan_id,status,amount_cents,interval_unit,started_at,source,external_id) VALUES (?,?,?,?,?,?,?,?)", [u.id, 'pro', 'active', 1200, 'month', new Date(), 'paypal', 'I-TEST456'])
+      await pool.query("UPDATE users SET plan_id='pro' WHERE id=?", [u.id])
+      expect((await user.post('/api/billing/cancel').send({})).status).toBe(200)
+      expect((await user.get('/api/auth/me')).body.user.planId).toBe('free')
+      expect((await user.post('/api/billing/cancel').send({})).status).toBe(404)
+    })
+    it('closed beta: invite-only sign-up with limited, revocable codes; closed mode blocks all', async () => {
+      expect((await admin.put('/api/admin/settings').send({ signupMode: 'weird' })).status).toBe(400)
+      await admin.put('/api/admin/settings').send({ signupMode: 'invite' })
+      const reg = (email, code) => request(app).post('/api/auth/register').send({ email, password: 'long-enough-pw', acceptTerms: true, inviteCode: code })
+      expect((await reg('b1@example.com')).body.error).toBe('invite_required')
+      expect((await reg('b1@example.com', 'NOPE1234')).body.error).toBe('invite_invalid')
+      const code = (await admin.post('/api/admin/invites').send({ maxUses: 1, planId: 'pro', note: 'beta tester', expiresDays: 7 })).body.code
+      expect(code).toMatch(/^[A-Z0-9]{4,40}$/)
+      const ok = await reg('b1@example.com', code.toLowerCase()); expect(ok.status).toBe(201); expect(ok.body.user.planId).toBe('pro')
+      expect((await reg('b2@example.com', code)).body.error).toBe('invite_invalid') // single use
+      const c2 = (await admin.post('/api/admin/invites').send({ maxUses: 5 })).body.code
+      await admin.delete(`/api/admin/invites/${c2}`)
+      expect((await reg('b3@example.com', c2)).body.error).toBe('invite_invalid') // revoked
+      const c3 = (await admin.post('/api/admin/invites').send({ maxUses: 2 })).body.code
+      await pool.query("UPDATE invites SET expires_at='2000-01-01' WHERE code=?", [c3])
+      expect((await reg('b4@example.com', c3)).body.error).toBe('invite_invalid') // expired
+      await admin.put('/api/admin/settings').send({ signupMode: 'closed' })
+      expect((await reg('b5@example.com', 'ANY')).status).toBe(403)
+      await admin.put('/api/admin/settings').send({ signupMode: 'open' })
+      expect((await request(app).get('/api/config')).body.signupMode).toBe('open')
+    })
+    it('rejects body-less mutating calls that lack the custom header (CSRF) and duplicate external ids', async () => {
+      const plain = request.agent(app)
+      await plain.post('/api/auth/login').send({ email: 'boss@example.com', password: 'admin-password-123' })
+      expect((await plain.delete('/api/admin/payments/1')).status).toBe(415)
+      expect((await plain.delete('/api/admin/payments/1').set('X-Requested-With', 'mathema')).status).toBe(200)
+      await expect(pool.query("INSERT INTO subscriptions (user_id,plan_id,status,amount_cents,interval_unit,started_at,source,external_id) VALUES (1,'pro','active',1,'month',NOW(),'paypal','I-TEST456')")).rejects.toThrow()
+    })
+    it('deletes an account on request: data removed, accounting rows detached, wrong password refused', async () => {
+      const me = request.agent(app).set('X-Requested-With', 'mathema')
+      await me.post('/api/auth/register').send({ email: 'gone@example.com', password: 'long-enough-pw', acceptTerms: true })
+      await me.put('/api/data').send({ data: { schema: 1, models: [{ id: 'z' }], conversations: [], sources: [], relations: [], experiments: [] }, version: 0 })
+      await me.post('/api/feedback').send({ message: 'bye bye' })
+      const [[u]] = await pool.query("SELECT id FROM users WHERE email='gone@example.com'")
+      await pool.query("INSERT INTO payments (user_id,amount_cents,paid_at,source) VALUES (?,500,NOW(),'manual')", [u.id])
+      expect((await me.post('/api/account/delete').send({ password: 'nope' })).status).toBe(401)
+      expect((await me.post('/api/account/delete').send({ password: 'long-enough-pw' })).status).toBe(200)
+      const q = async (sql) => (await pool.query(sql, [u.id]))[0]
+      expect(await q('SELECT 1 FROM users WHERE id=?')).toHaveLength(0)
+      expect(await q('SELECT 1 FROM user_data WHERE user_id=?')).toHaveLength(0)
+      expect(await q('SELECT 1 FROM feedback WHERE user_id=?')).toHaveLength(0)
+      expect(await q('SELECT 1 FROM payments WHERE user_id=?')).toHaveLength(0)
+      const [[pay]] = await pool.query('SELECT COUNT(*) n FROM payments WHERE user_id IS NULL AND amount_cents=500'); expect(Number(pay.n)).toBe(1)
+      expect((await me.get('/api/auth/me')).body.user).toBeNull()
+    })
+    it('collects feedback and shows it to the admin only', async () => {
+      expect((await request(app).post('/api/feedback').send({ message: 'hi there' })).status).toBe(401)
+      expect((await user.post('/api/feedback').send({ message: 'x' })).status).toBe(400)
+      expect((await user.post('/api/feedback').send({ kind: 'bug', message: 'The slider jumps', page: 'workspace' })).status).toBe(201)
+      expect((await admin.get('/api/admin/feedback')).body[0].message).toBe('The slider jumps')
+      expect((await user.get('/api/admin/feedback')).status).toBe(403)
+    })
+    it('changes password (old one stops working) and stores legal contact settings', async () => {
+      expect((await user.post('/api/auth/password').send({ current: 'wrong', next: 'another-long-pass' })).status).toBe(401)
+      expect((await user.post('/api/auth/password').send({ current: 'long-enough-pw', next: 'short' })).status).toBe(400)
+      expect((await user.post('/api/auth/password').send({ current: 'long-enough-pw', next: 'another-long-pass' })).status).toBe(200)
+      expect((await user.get('/api/auth/me')).body.user.email).toBe('u@example.com') // still signed in here
+      expect((await request(app).post('/api/auth/login').send({ email: 'u@example.com', password: 'long-enough-pw' })).status).toBe(401)
+      expect((await request(app).post('/api/auth/login').send({ email: 'u@example.com', password: 'another-long-pass' })).status).toBe(200)
+      await admin.put('/api/admin/settings').send({ legalEntity: 'Acme S.A.', legalEmail: 'legal@acme.example' })
+      expect((await request(app).get('/api/config')).body.legal).toEqual({ entity: 'Acme S.A.', email: 'legal@acme.example' })
+    })
   })
 })

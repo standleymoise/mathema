@@ -1,5 +1,5 @@
 import { decrypt } from './crypto.mjs'
-const ENV = { anthropic: 'ANTHROPIC_API_KEY', openai: 'OPENAI_API_KEY' }
+const ENV = { anthropic: 'ANTHROPIC_API_KEY', openai: 'OPENAI_API_KEY', paypal: 'PAYPAL_CLIENT_SECRET' }
 
 /** DB key (encrypted, set in the admin panel) wins; env var is a fallback. Returns null if none. */
 export async function getApiKey(pool, cfg, provider) {

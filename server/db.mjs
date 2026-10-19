@@ -1,5 +1,5 @@
 import mysql from 'mysql2/promise'
-import { SCHEMA, SEED_PLANS, SEED_PRICES, DEFAULT_SETTINGS } from './schema.mjs'
+import { SCHEMA, SEED_PLANS, SEED_PRICES, DEFAULT_SETTINGS, COLUMNS, STATUS_ENUM } from './schema.mjs'
 import { hashPassword } from './crypto.mjs'
 
 export function createPool(db) {
@@ -8,6 +8,19 @@ export function createPool(db) {
 
 export async function migrate(pool, cfg) {
   for (const sql of SCHEMA) await pool.query(sql)
+  for (const [table, column, ddl] of COLUMNS) {
+    const [[c]] = await pool.query('SELECT COUNT(*) n FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND COLUMN_NAME=?', [table, column])
+    if (!Number(c.n)) await pool.query(`ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${ddl}`)
+  }
+  await pool.query(STATUS_ENUM)
+  const hasIndex = async (name) => (await pool.query('SELECT 1 FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=\'subscriptions\' AND INDEX_NAME=?', [name]))[0].length > 0
+  if (!(await hasIndex('uq_subs_external'))) {
+    if (await hasIndex('idx_subs_external')) await pool.query('DROP INDEX idx_subs_external ON subscriptions')
+    await pool.query('CREATE UNIQUE INDEX uq_subs_external ON subscriptions (external_id)') // PayPal ids are unique; NULLs (manual subs) are allowed many times
+  }
+  // legacy setting from the first release
+  const [legacy] = await pool.query("SELECT v FROM settings WHERE k='signup_enabled'")
+  if (legacy.length && legacy[0].v === 'false') await pool.query("INSERT IGNORE INTO settings (k,v) VALUES ('signup_mode','\"closed\"')")
   for (const [id, name, price, unit, quota, active] of SEED_PLANS)
     await pool.query('INSERT IGNORE INTO plans (id,name,price_cents,interval_unit,ai_monthly_quota,active) VALUES (?,?,?,?,?,?)', [id, name, price, unit, quota, active])
   for (const [provider, model, label, i, o] of SEED_PRICES)
