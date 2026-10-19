@@ -252,7 +252,7 @@ export default function Universe() {
                 const r = TYPE_R[n.type], isSel = sel === n.id
                 return (
                   <g key={n.id} data-node={n.id} transform={`translate(${p.x} ${p.y})`} opacity={dim(n.id) ? 0.18 : 1} className="cursor-pointer"
-                    tabIndex={0} role="button" aria-label={`${n.label} (${n.type})`} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), setSel(isSel ? null : n.id))}>
+                    tabIndex={0} role="button" aria-label={`${n.label} (${tr(lang, ...TYPE_LABEL[n.type])})`} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), setSel(isSel ? null : n.id))}>
                     <circle r={r + 8} fill="transparent" />
                     {isSel && <circle r={r + 5} fill="none" stroke="rgb(var(--accent))" strokeWidth={2} />}
                     <circle r={r} fill={n.type === 'document' ? 'rgb(var(--surface))' : TYPE_COLOR[n.type]} stroke={n.type === 'document' ? TYPE_COLOR[n.type] : 'rgb(var(--bg))'} strokeWidth={n.type === 'document' ? 2.5 : 1.5} />
@@ -279,7 +279,7 @@ export default function Universe() {
           {!sel && graph.nodes.length > 0 && <p className="pointer-events-none absolute inset-x-0 bottom-3 hidden text-center text-xs text-mute sm:block">{t('selectNode')}</p>}
         </div>
         {/* details: side panel on desktop, bottom sheet on mobile */}
-        {selNode && <aside aria-label="Node details" className="fade-in absolute inset-x-0 bottom-0 z-20 max-h-[58%] rounded-t-2xl border-t border-line bg-surface shadow-2xl md:static md:max-h-none md:w-[340px] md:shrink-0 md:rounded-none md:border-l md:border-t-0 md:shadow-none"><NodeDetail n={selNode} /></aside>}
+        {selNode && <aside aria-label={tr(lang, 'Details', 'Detalles')} className="fade-in absolute inset-x-0 bottom-0 z-20 max-h-[58%] rounded-t-2xl border-t border-line bg-surface shadow-2xl md:static md:max-h-none md:w-[340px] md:shrink-0 md:rounded-none md:border-l md:border-t-0 md:shadow-none"><NodeDetail n={selNode} /></aside>}
       </div>
     </div>
   )

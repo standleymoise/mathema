@@ -4,6 +4,7 @@ import katex from 'katex'
 import type { Provenance, ValidationStatus } from '../core/types'
 import { provLabel } from '../core/analyzer'
 import { useStore, useT } from '../store/store'
+import { tr } from '../core/text'
 
 export const cx = (...a: (string | false | undefined | null)[]) => a.filter(Boolean).join(' ')
 
@@ -58,6 +59,7 @@ export const Label = ({ children }: { children: ReactNode }) => <div className="
 
 export function Modal({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: ReactNode }) {
   const id = useId()
+  const lang = useStore((x) => x.ui.lang)
   const ref = useRef<HTMLDivElement>(null)
   // Keep the latest onClose in a ref: callers pass a new function every render, and depending on it
   // would re-run this effect (stealing focus from the input) on every keystroke.
@@ -78,7 +80,7 @@ export function Modal({ open, onClose, title, children }: { open: boolean; onClo
       <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={id} className="fade-in w-full max-w-md rounded-t-2xl border border-line bg-surface p-5 shadow-xl outline-none sm:rounded-2xl">
         <div className="mb-3 flex items-start justify-between gap-4">
           <h2 id={id} className="serif text-xl">{title}</h2>
-          <IconBtn label="Close" onClick={onClose} className="-mr-2 -mt-2"><X size={18} /></IconBtn>
+          <IconBtn label={tr(lang, 'Close', 'Cerrar')} onClick={onClose} className="-mr-2 -mt-2"><X size={18} /></IconBtn>
         </div>
         {children}
       </div>

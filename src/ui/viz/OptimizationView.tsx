@@ -4,8 +4,12 @@ import { solveLP } from '../../core/engine/lp'
 import { Eq, Label } from '../common'
 import { ChartFrame, ParamControls, ScenarioPanel, fmt } from './shared'
 import type { Working } from '../models/working'
+import { useStore } from '../../store/store'
+import { tr } from '../../core/text'
 
 export default function OptimizationView({ model, w }: { model: MathModel; w: Working }) {
+  const lang = useStore((st) => st.ui.lang)
+  const L = (en: string, es: string) => tr(lang, en, es)
   const base = model.spec as Extract<MathModel['spec'], { kind: 'optimization' }>
   const spec = optimizationWith(base, w.params)
   const sol = solveLP(spec)
@@ -33,9 +37,9 @@ export default function OptimizationView({ model, w }: { model: MathModel; w: Wo
   const latex = `\\max\; ${fmt(spec.cx)}\\,x + ${fmt(spec.cy)}\\,y \\quad \\text{s.t.}\; ${spec.constraints.map((c) => `${fmt(c.a)}x + ${fmt(c.b)}y \\le ${fmt(c.rhs)}`).join(',\; ')},\; x,y \\ge 0`
   return (
     <div className="grid min-w-0 grid-cols-1 gap-4">
-      <section className="rounded-xl border border-line bg-surface p-4"><Label>{model.equations[0]?.label ?? 'Program'}</Label><div className="serif overflow-x-auto text-[17px]"><Eq latex={latex} /></div></section>
-      <ChartFrame title="Feasible region and optimum" caption="Exact solution by vertex enumeration. Dashed line: objective level through the optimum. Constraint coefficients are fixed by the model; objective values and limits are adjustable below.">
-        <svg viewBox={`0 0 ${W} ${H}`} className="h-full w-full" role="img" aria-label={`Feasible region; optimum at ${spec.xName}=${fmt(sol.x)}, ${spec.yName}=${fmt(sol.y)}`}>
+      <section className="rounded-xl border border-line bg-surface p-4"><Label>{model.equations[0]?.label ?? L('Program', 'Programa')}</Label><div className="serif overflow-x-auto text-[17px]"><Eq latex={latex} /></div></section>
+      <ChartFrame title={L('Feasible region and optimum', 'Región factible y óptimo')} caption={L('Exact solution by vertex enumeration. Dashed line: objective level through the optimum. Constraint coefficients are fixed by the model; objective values and limits are adjustable below.', 'Solución exacta por enumeración de vértices. Línea punteada: nivel del objetivo que pasa por el óptimo. Los coeficientes de las restricciones son fijos; los valores del objetivo y los límites se ajustan abajo.')}>
+        <svg viewBox={`0 0 ${W} ${H}`} className="h-full w-full" role="img" aria-label={L(`Feasible region; optimum at ${spec.xName}=${fmt(sol.x)}, ${spec.yName}=${fmt(sol.y)}`, `Región factible; óptimo en ${spec.xName}=${fmt(sol.x)}, ${spec.yName}=${fmt(sol.y)}`)}>
           {ticks(X).map((v) => <g key={`x${v}`}><line x1={sx(v)} x2={sx(v)} y1={m.t} y2={H - m.b} stroke="var(--grid)" /><text x={sx(v)} y={H - m.b + 15} textAnchor="middle" className="recharts-text">{v}</text></g>)}
           {ticks(Y).map((v) => <g key={`y${v}`}><line y1={sy(v)} y2={sy(v)} x1={m.l} x2={W - m.r} stroke="var(--grid)" /><text x={m.l - 6} y={sy(v) + 4} textAnchor="end" className="recharts-text">{v}</text></g>)}
           <text x={(W + m.l) / 2} y={H - 6} textAnchor="middle" className="recharts-text">{spec.xName}</text>
@@ -48,16 +52,16 @@ export default function OptimizationView({ model, w }: { model: MathModel; w: Wo
         </svg>
       </ChartFrame>
       <section className="rounded-xl border border-line bg-surface p-4" aria-live="polite">
-        <Label>Optimum</Label>
+        <Label>{L('Optimum', 'Óptimo')}</Label>
         {sol.feasible ? (
           <>
             <div className="serif text-3xl">{fmt(sol.value, 5)} <span className="text-sm text-mute">{spec.objectiveLabel}</span></div>
             <div className="mt-1 text-[13px] text-mute">{spec.xName} = <b className="font-mono text-ink">{fmt(sol.x)}</b> · {spec.yName} = <b className="font-mono text-ink">{fmt(sol.y)}</b></div>
-            <div className="mt-1 text-[13px] text-mute">Binding limits: {sol.binding.length ? sol.binding.join(', ') : 'none'}</div>
+            <div className="mt-1 text-[13px] text-mute">{L('Binding limits', 'Límites que se agotan')}: {sol.binding.length ? sol.binding.join(', ') : L('none', 'ninguno')}</div>
             {sol.error && <div role="alert" className="mt-2 text-sm text-warn">{sol.error}</div>}
           </>
         ) : <div role="alert" className="text-sm text-bad">{sol.error}</div>}
-        <p className="mt-2 text-xs text-mute">A normative result: the best choice given the stated inputs. It is not an observation of real behaviour.</p>
+        <p className="mt-2 text-xs text-mute">{L('A normative result: the best choice given the stated inputs. It is not an observation of real behaviour.', 'Un resultado normativo: la mejor opción con los datos indicados. No es una observación de comportamiento real.')}</p>
       </section>
       <ParamControls model={model} params={w.params} base={w.base} onChange={w.setParam} onReset={w.reset} />
       <ScenarioPanel model={model} params={w.params} onApply={w.setParams} setName={() => {}} />

@@ -3,11 +3,11 @@ import { Download, Moon, RotateCcw, Sun, Trash2 } from 'lucide-react'
 import { Btn, Confirm, EmptyState, IconBtn, Label, Modal, cx } from '../common'
 import { PageShell } from './Lists'
 import { records, server, ui, useStore, useT } from '../../store/store'
-import { repository } from '../../services/repository'
 import { isIOS, promptInstall, resetAppCache, usePwa } from '../../pwa'
 import { tr, termSet, normName } from '../../core/text'
 import { kindLabel } from './Workspace'
 
+const SRC_KIND: Record<string, [string, string]> = { paper: ['paper', 'artículo'], text: ['text', 'texto'], file: ['file', 'archivo'], dataset: ['dataset', 'datos'], demo: ['demo', 'demo'], reference: ['reference', 'referencia'] }
 export function SourcesView() {
   const t = useT()
   const lang = useStore((s) => s.ui.lang)
@@ -22,7 +22,7 @@ export function SourcesView() {
       <section className="mb-6 rounded-xl border border-line bg-surface p-4">
         <Label>{tr(lang, 'Add a reference or note', 'Agregar una referencia o nota')}</Label>
         <form className="grid gap-2" onSubmit={(e) => { e.preventDefault(); if (!title.trim()) return; records.addSource({ title: title.trim(), kind: 'reference', citation: cite.trim() || undefined, note: note.trim() || tr(lang, 'Added by you. Not verified by MATHEMA.', 'Agregada por vos. MATHEMA no la verificó.') }); setTitle(''); setCite(''); setNote('') }}>
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={tr(lang, 'Title', 'Título')} aria-label="Title" className="h-10 rounded-lg border border-line bg-bg px-3 text-sm outline-none focus:border-accent" />
+          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={tr(lang, 'Title', 'Título')} aria-label={tr(lang, 'Title', 'Título')} className="h-10 rounded-lg border border-line bg-bg px-3 text-sm outline-none focus:border-accent" />
           <input value={cite} onChange={(e) => setCite(e.target.value)} placeholder={tr(lang, 'Citation / URL (optional)', 'Cita / URL (opcional)')} aria-label="Citation" className="h-10 rounded-lg border border-line bg-bg px-3 text-sm outline-none focus:border-accent" />
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder={tr(lang, 'Why it matters (optional)', 'Por qué importa (opcional)')} aria-label="Note" className="h-10 rounded-lg border border-line bg-bg px-3 text-sm outline-none focus:border-accent" />
           <div><Btn type="submit" variant="outline" disabled={!title.trim()}>{tr(lang, 'Add source', 'Agregar fuente')}</Btn></div>
@@ -31,7 +31,7 @@ export function SourcesView() {
       {db.sources.length === 0 ? <EmptyState title={t('empty')} /> : (
         <ul className="space-y-3">{db.sources.map((s) => { const used = db.models.filter((m) => m.sourceIds.includes(s.id)); return (
           <li key={s.id} ref={(el) => { if (el) refs.current.set(s.id, el) }} className={cx('rounded-xl border bg-surface p-4 transition-colors', focusId === s.id ? 'border-accent ring-2 ring-accent/30' : 'border-line')}>
-            <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="mb-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-mute">{s.kind}{s.fileName ? ` · ${s.fileName}` : ''}{s.fileSize ? ` · ${(s.fileSize / 1024).toFixed(1)} KB` : ''}</div><div className="serif text-lg leading-snug">{s.title}</div></div>
+            <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="mb-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-mute">{tr(lang, ...(SRC_KIND[s.kind] ?? [s.kind, s.kind]))}{s.fileName ? ` · ${s.fileName}` : ''}{s.fileSize ? ` · ${(s.fileSize / 1024).toFixed(1)} KB` : ''}</div><div className="serif text-lg leading-snug">{s.title}</div></div>
               <IconBtn label={t('delete')} className="-mr-2 -mt-1" onClick={() => setDel(s.id)}><Trash2 size={16} /></IconBtn></div>
             {s.citation && <p className="mt-1 text-[13px] italic text-mute">{s.citation}</p>}
             <p className="mt-1.5 text-[13px] text-mute">{s.note}</p>
@@ -87,7 +87,7 @@ export function SettingsView() {
           <h2 className="serif mb-2 mt-8 text-xl">{tr(s.lang, 'System status', 'Estado del sistema')}</h2>
           <section className="rounded-xl border border-line bg-surface px-4 text-sm">
             <Row k={t('aiStatus')}><span className="text-right text-mute">{!srv.available ? t('localAnalyzer') : srv.aiAvailable ? tr(s.lang, 'AI via the MATHEMA server (keys are held by the admin, never in the browser). Equations and data tables are still solved deterministically.', 'IA vía el servidor de MATHEMA (las claves las guarda el admin, nunca el navegador). Las ecuaciones y tablas de datos se siguen resolviendo de forma determinista.') : tr(s.lang, 'Server without an AI key configured — local heuristic analyzer in use.', 'Servidor sin clave de IA configurada — se usa el analizador heurístico local.')}</span></Row>
-            <Row k={t('persistence')}><span className="text-right text-mute">{srv.user ? tr(s.lang, 'MySQL (your account) + local cache', 'MySQL (tu cuenta) + caché local') : repository.label}</span></Row>
+            <Row k={t('persistence')}><span className="text-right text-mute">{srv.user ? tr(s.lang, 'MySQL (your account) + local cache', 'MySQL (tu cuenta) + caché local') : tr(s.lang, 'Browser storage (demo mode)', 'Almacenamiento del navegador (modo demo)')}</span></Row>
             <Row k={tr(s.lang, 'Voice dictation', 'Dictado por voz')}><span className="text-right text-mute">{('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) ? tr(s.lang, 'Available (browser will ask for microphone permission)', 'Disponible (el navegador pedirá permiso de micrófono)') : tr(s.lang, 'Not supported by this browser', 'No soportado por este navegador')}</span></Row>
           </section>
           <p className="mt-3 text-xs leading-relaxed text-mute">{tr(s.lang, 'No API key is ever stored in the browser. Keys are managed by the admin on the server.', 'Nunca se guarda una clave de API en el navegador. Las claves las gestiona el admin en el servidor.')}</p>

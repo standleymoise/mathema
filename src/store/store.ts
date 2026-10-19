@@ -10,7 +10,7 @@ import { parseTable, type Dataset } from '../core/analyzer'
 import { findRelated } from '../core/memory'
 import { explainModel, researchNotes } from '../core/assist'
 import { baseParams, sensitivity } from '../core/engine/runtime'
-import { exampleModel } from '../core/examples'
+import { exampleModel, localizeDemos } from '../core/examples'
 import { now, tr, uid } from '../core/text'
 import { translate, type Key } from '../i18n'
 
@@ -65,7 +65,7 @@ function loadUI(): UI {
   }
 }
 
-let state: State = { db: repository.load(), ui: loadUI(), server: { checked: false, available: false, signupMode: 'closed', billingEnabled: false, legal: { entity: '', email: '' }, plans: [], aiAvailable: false, user: null, sync: 'idle', usage: null, features: null } }
+let state: State = { db: (() => { const d = repository.load(); const l = loadUI().lang; return l === 'es' ? localizeDemos(d, l) : d })(), ui: loadUI(), server: { checked: false, available: false, signupMode: 'closed', billingEnabled: false, legal: { entity: '', email: '' }, plans: [], aiAvailable: false, user: null, sync: 'idle', usage: null, features: null } }
 const listeners = new Set<() => void>()
 const emit = () => listeners.forEach((l) => l())
 export const subscribe = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l) } }
@@ -97,7 +97,7 @@ export const useT = () => { const lang = useStore((s) => s.ui.lang); return (k: 
 
 // ---- UI actions -----------------------------------------------------------------
 export const ui = {
-  setLang: (lang: Lang) => setUI({ lang }),
+  setLang: (lang: Lang) => { setUI({ lang }); setDB((db) => localizeDemos(db, lang)) },
   setTheme: (theme: 'light' | 'dark') => {
     document.documentElement.dataset.theme = theme
     try { localStorage.setItem('mathema:theme', theme) } catch { /* ignore */ }
@@ -283,7 +283,7 @@ export async function sendMessage(text: string, files: AttachedFile[] = []) {
     if (mode === 'experiment') {
       if (!selected) { pushMessage(convId, { ...base, text: L('Experiments run on a stored model. Pick one in “My models” (or ask me to build one in Model mode), then come back.', 'Los experimentos se ejecutan sobre un modelo guardado. Elegí uno en “Mis modelos” (o pedime construir uno en modo Modelar) y volvé.') }); return }
       setUI({ processing: L('Running deterministic sensitivity analysis…', 'Ejecutando análisis de sensibilidad determinista…') }); await wait(260)
-      const sens = sensitivity(selected, baseParams(selected))
+      const sens = sensitivity(selected, baseParams(selected), 0.2, lang)
       if (!sens) { pushMessage(convId, { ...base, modelId: selected.id, text: L(`“${selected.title}” has no adjustable numeric parameters, so there is nothing to vary yet.`, `“${selected.title}” no tiene parámetros numéricos ajustables, así que aún no hay qué variar.`) }); return }
       const rows = sens.rows.map((r) => ({ label: r.name, value: `${r.low.toFixed(3)} → ${r.high.toFixed(3)} (Δ ${r.swing.toFixed(3)})` }))
       records.addExperiment({ modelId: selected.id, name: L(`Sensitivity ±${sens.pct * 100}% — ${selected.title}`, `Sensibilidad ±${sens.pct * 100}% — ${selected.title}`), type: 'sensitivity', rows, provenance: 'simulated', note: L(`One-at-a-time ±20% on “${sens.metric.label}”. Simulated; ignores interactions.`, `Uno a la vez ±20% sobre “${sens.metric.label}”. Simulado; ignora interacciones.`) })

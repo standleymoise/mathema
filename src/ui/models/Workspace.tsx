@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Copy, PanelRight, Pencil, Save, Trash2, FlaskConical } from 'lucide-react'
 import type { MathModel } from '../../core/types'
+import { EXP_TYPE } from './Lists'
+import { provLabel } from '../../core/analyzer'
 import { sensitivity } from '../../core/engine/runtime'
 import { Btn, Confirm, Disclosure, Label, PromptModal, ValidationBadge, cx } from '../common'
 import { fmt } from '../viz/shared'
@@ -34,18 +36,18 @@ function SensitivityPanel({ model, w }: { model: MathModel; w: Working }) {
   const t = useT()
   const lang = useStore((s) => s.ui.lang)
   const live = { ...model, spec: w.spec }
-  const sens = sensitivity(live, w.params)
+  const sens = sensitivity(live, w.params, 0.2, lang)
   if (!sens || !sens.rows.length) return null
   const data = sens.rows.map((r) => ({ name: r.name, lowD: r.low - r.base, highD: r.high - r.base, swing: r.swing }))
   return (
     <section className="rounded-xl border border-line bg-surface p-4">
       <div className="flex items-start justify-between gap-2">
-        <div><Label>{t('sensitivity')}</Label><p className="-mt-1 mb-2 text-xs text-mute">±{sens.pct * 100}% one parameter at a time → change in “{sens.metric.label}” (baseline {fmt(sens.metric.value)}).</p></div>
+        <div><Label>{t('sensitivity')}</Label><p className="-mt-1 mb-2 text-xs text-mute">{tr(lang, `±${sens.pct * 100}% one parameter at a time → change in “${sens.metric.label}” (baseline ${fmt(sens.metric.value)}).`, `±${sens.pct * 100}% un parámetro a la vez → cambio en «${sens.metric.label}» (base ${fmt(sens.metric.value)}).`)}</p></div>
         <Btn size="sm" variant="outline" onClick={() => {
           records.addExperiment({ modelId: model.id, name: tr(lang, `Sensitivity ±${sens.pct * 100}% — ${model.title}`, `Sensibilidad ±${sens.pct * 100}% — ${model.title}`), type: 'sensitivity', provenance: 'simulated',
-            rows: sens.rows.map((r) => ({ label: r.name, value: `${fmt(r.low)} → ${fmt(r.high)} (Δ ${fmt(r.swing)})` })), note: `One-at-a-time ±20% on "${sens.metric.label}". Simulated; ignores interactions.` })
+            rows: sens.rows.map((r) => ({ label: r.name, value: `${fmt(r.low)} → ${fmt(r.high)} (Δ ${fmt(r.swing)})` })), note: tr(lang, `One-at-a-time ±20% on "${sens.metric.label}". Simulated; ignores interactions.`, `Variación de ±20% de un parámetro a la vez sobre «${sens.metric.label}». Simulado; ignora interacciones.`) })
           toast(tr(lang, 'Saved to Experiments.', 'Guardado en Experimentos.'))
-        }}><FlaskConical size={14} />Save</Btn>
+        }}><FlaskConical size={14} />{tr(lang, 'Save', 'Guardar')}</Btn>
       </div>
       <div style={{ height: 40 + data.length * 34 }} className="w-full min-w-0">
         <ResponsiveContainer>
@@ -59,7 +61,7 @@ function SensitivityPanel({ model, w }: { model: MathModel; w: Working }) {
           </BarChart>
         </ResponsiveContainer>
       </div>
-      <p className="mt-1 text-xs text-mute">Blue: parameter −20%. Orange: +20%. Interactions between parameters are not captured.</p>
+      <p className="mt-1 text-xs text-mute">{tr(lang, 'Blue: parameter −20%. Orange: +20%. Interactions between parameters are not captured.', 'Azul: parámetro −20%. Naranja: +20%. No se capturan las interacciones entre parámetros.')}</p>
     </section>
   )
 }
@@ -118,8 +120,8 @@ export default function Workspace({ model }: { model: MathModel }) {
         <SensitivityPanel model={model} w={w} />
         {exps.length > 0 && (
           <section className="rounded-xl border border-line bg-surface p-4"><Label>{t('experiments')}</Label>
-            <ul className="space-y-1 text-[13px]">{exps.slice(0, 4).map((e) => <li key={e.id} className="flex justify-between gap-3"><span>{e.name}</span><span className="text-mute">{e.type} · {e.provenance}</span></li>)}</ul>
-            <button className="mt-2 text-[13px] text-accent hover:underline" onClick={() => ui.setView('experiments')}>All experiments →</button>
+            <ul className="space-y-1 text-[13px]">{exps.slice(0, 4).map((e) => <li key={e.id} className="flex justify-between gap-3"><span>{e.name}</span><span className="text-mute">{tr(lang, ...(EXP_TYPE[e.type] ?? [e.type, e.type]))} · {provLabel(e.provenance, lang)}</span></li>)}</ul>
+            <button className="mt-2 text-[13px] text-accent hover:underline" onClick={() => ui.setView('experiments')}>{tr(lang, 'All experiments', 'Todos los experimentos')} →</button>
           </section>
         )}
         <section className="rounded-xl border border-line bg-surface px-4"><Integrity model={model} w={w} /></section>

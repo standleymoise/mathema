@@ -1,7 +1,8 @@
 // Example gallery. Two groups: explicit math (equations, data, programs) and vague everyday ideas
 // shown as the model the system would propose. All numbers are illustrative placeholders (demo).
 import type { GraphSpec, Lang, MathModel, Variable } from './types'
-import { DEMO_MODELS } from './demo'
+import { demoExperiments, demoModels, demoRelations, demoSources } from './demo'
+import type { DB } from './types'
 import { tr } from './text'
 
 export interface Example {
@@ -176,7 +177,6 @@ const timeSplit = (lang: Lang): MathModel => {
   })
 }
 
-const seeded = (id: string) => DEMO_MODELS.find((m) => m.id === id)!
 
 export const EXAMPLES: Example[] = [
   { id: 'mdl_demo_temp', group: 'math', icon: 'sigma', title: ['Equation with sliders', 'Ecuación con controles'], sub: ['Crop yield vs temperature', 'Rendimiento vs temperatura'] },
@@ -196,5 +196,26 @@ export const EXAMPLES: Example[] = [
 export function exampleModel(id: string, lang: Lang): MathModel | null {
   const e = EXAMPLES.find((x) => x.id === id)
   if (!e) return null
-  return e.build ? e.build(lang) : structuredClone(seeded(id))
+  return e.build ? e.build(lang) : demoModels(lang).find((m) => m.id === id) ?? null
+}
+
+/**
+ * Re-renders the built-in demo content (and gallery examples) in the interface language, but only the pieces the user
+ * has not touched: version 1, no history, same number of scenarios. Their own models are never modified.
+ */
+export function localizeDemos(db: DB, lang: Lang): DB {
+  const fresh = new Map<string, MathModel>()
+  for (const m of demoModels(lang)) fresh.set(m.id, m)
+  for (const e of EXAMPLES) if (e.build) fresh.set(e.id, e.build(lang))
+  const untouched = (m: MathModel, f: MathModel) => m.isDemo && m.version === 1 && m.versions.length === 0 && m.scenarios.length === f.scenarios.length
+  const srcFresh = new Map(demoSources(lang).map((x) => [x.id, x]))
+  const relFresh = new Map(demoRelations(lang).map((x) => [x.id, x]))
+  const expFresh = new Map(demoExperiments(lang).map((x) => [x.id, x]))
+  return {
+    ...db,
+    models: db.models.map((m) => { const f = fresh.get(m.id); return f && untouched(m, f) ? f : m }),
+    sources: db.sources.map((x) => srcFresh.get(x.id) ?? x),
+    relations: db.relations.map((x) => { const f = relFresh.get(x.id); return f ? { ...x, justification: f.justification } : x }),
+    experiments: db.experiments.map((x) => expFresh.get(x.id) ?? x),
+  }
 }

@@ -44,7 +44,7 @@ export default function GraphView({ model, w }: { model: MathModel; w: Working }
             </div>
           )}
         </div>
-        <svg ref={svg} viewBox={`0 0 ${W} ${H}`} className="h-auto w-full touch-none select-none" role="img" aria-label="Interactive graph. Drag nodes; select a node to propagate effects."
+        <svg ref={svg} viewBox={`0 0 ${W} ${H}`} className="h-auto w-full touch-none select-none" role="img" aria-label={L('Interactive graph. Drag factors; select one to see its effects.', 'Gráfico interactivo. Arrastrá los factores; elegí uno para ver sus efectos.')}
           onPointerMove={(e) => { if (!drag.current) return; const p = pt(e); setS({ ...spec, nodes: spec.nodes.map((n) => (n.id === drag.current!.id ? { ...n, x: Math.max(50, Math.min(W - 50, p.x - drag.current!.dx)), y: Math.max(20, Math.min(H - 20, p.y - drag.current!.dy)) } : n)) }) }}
           onPointerUp={() => (drag.current = null)} onPointerLeave={() => (drag.current = null)}>
           <defs>
@@ -100,17 +100,17 @@ export default function GraphView({ model, w }: { model: MathModel; w: Working }
       <section className="rounded-xl border border-line bg-surface p-4">
         <Label>{L('Edit structure', 'Editar estructura')}</Label>
         <form className="mb-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); if (!label.trim()) return; setS({ ...spec, nodes: [...spec.nodes, { id: uid('n'), label: label.trim(), x: 320, y: 170 }] }); setLabel('') }}>
-          <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={L('New factor…', 'Nuevo factor…')} aria-label="New concept name" className="h-9 min-w-0 flex-1 rounded-lg border border-line bg-bg px-3 text-sm outline-none focus:border-accent" />
+          <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={L('New factor…', 'Nuevo factor…')} aria-label={L('New factor name', 'Nombre del nuevo factor')} className="h-9 min-w-0 flex-1 rounded-lg border border-line bg-bg px-3 text-sm outline-none focus:border-accent" />
           <Btn type="submit" variant="outline" size="sm" className="h-9"><Plus size={14} />{L('Add factor', 'Agregar factor')}</Btn>
         </form>
         <form className="grid grid-cols-2 gap-2 sm:grid-cols-[1fr_1fr_90px_1.4fr_auto]" onSubmit={(e) => { e.preventDefault(); if (!from || !to || from === to) return; setS({ ...spec, edges: [...spec.edges, { id: uid('ed'), from, to, sign: Number(sign) as 1 | -1 | 0, note: note || 'Added by you.' }] }); setNote('') }}>
-          {[['From', from, setFrom], ['To', to, setTo]].map(([lab, val, set]) => (
+          {[[L('From', 'Desde'), from, setFrom], [L('To', 'Hacia'), to, setTo]].map(([lab, val, set]) => (
             <select key={lab as string} aria-label={lab as string} value={val as string} onChange={(e) => (set as (v: string) => void)(e.target.value)} className="h-9 rounded-lg border border-line bg-bg px-2 text-sm">
-              <option value="">{lab as string}…</option>{spec.nodes.map((n) => <option key={n.id} value={n.id}>{n.label}</option>)}
+              <option value="">{lab as string}…</option>{spec.nodes.map((n) => <option key={n.id} value={n.id}>{cap(n.label)}</option>)}
             </select>
           ))}
-          <select aria-label="Sign" value={sign} onChange={(e) => setSign(e.target.value as '1')} className="h-9 rounded-lg border border-line bg-bg px-2 text-sm"><option value="1">+ raises</option><option value="-1">− lowers</option><option value="0">? unknown</option></select>
-          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Justification" aria-label="Justification" className="col-span-2 h-9 rounded-lg border border-line bg-bg px-3 text-sm outline-none focus:border-accent sm:col-span-1" />
+          <select aria-label={L('Effect', 'Efecto')} value={sign} onChange={(e) => setSign(e.target.value as '1')} className="h-9 rounded-lg border border-line bg-bg px-2 text-sm"><option value="1">{L('+ raises', '+ sube')}</option><option value="-1">{L('− lowers', '− baja')}</option><option value="0">{L('? unknown', '? no se sabe')}</option></select>
+          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder={L('Why? (optional)', '¿Por qué? (opcional)')} aria-label={L('Justification', 'Justificación')} className="col-span-2 h-9 rounded-lg border border-line bg-bg px-3 text-sm outline-none focus:border-accent sm:col-span-1" />
           <Btn type="submit" variant="outline" size="sm" className={cx('col-span-2 h-9 sm:col-span-1')}>{L('Add arrow', 'Agregar flecha')}</Btn>
         </form>
       </section>

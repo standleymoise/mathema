@@ -1,5 +1,6 @@
 import { BookMarked, CreditCard, FlaskConical, Library, LogIn, MessageSquarePlus, MessageSquare, Network, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, ShieldCheck, Sigma, X } from 'lucide-react'
 import { cx, IconBtn } from '../common'
+import { tr } from '../../core/text'
 import { ui, useStore, useT, type View } from '../../store/store'
 import type { Key } from '../../i18n'
 
@@ -26,16 +27,16 @@ export default function Sidebar() {
   return (
     <>
       {s.sidebarOpenMobile && <div className="fixed inset-0 z-40 bg-black/40 lg:hidden" onClick={() => ui.setSidebarMobile(false)} aria-hidden />}
-      <nav aria-label="Main" className={cx(
+      <nav aria-label={tr(s.lang, 'Main', 'Principal')} className={cx(
         'fixed inset-y-0 left-0 z-50 flex w-[290px] max-w-[86vw] flex-col border-r border-line bg-bg transition-transform duration-200 lg:static lg:z-auto lg:max-w-none lg:translate-x-0 lg:transition-[width]',
         s.sidebarOpenMobile ? 'translate-x-0' : '-translate-x-full', collapsed ? 'lg:w-[64px]' : 'lg:w-[280px]')}>
         <div className={cx('flex h-14 shrink-0 items-center justify-between px-3', collapsed && 'lg:flex-col lg:h-auto lg:gap-1 lg:py-3')}>
-          <button onClick={ui.newIdea} className="flex items-center gap-2.5 rounded-lg px-1.5 py-1" aria-label="MATHEMA — home">
+          <button onClick={ui.newIdea} className="flex items-center gap-2.5 rounded-lg px-1.5 py-1" aria-label={tr(s.lang, 'MATHEMA — home', 'MATHEMA — inicio')}>
             <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-[rgb(var(--surface))]"><Sigma size={17} /></span>
             <span className={cx('serif text-[19px] font-medium tracking-[0.12em]', collapsed && 'lg:hidden')}>MATHEMA</span>
           </button>
           <IconBtn label={collapsed ? t('expand') : t('collapse')} onClick={ui.toggleSidebar} className="hidden lg:inline-flex">{collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}</IconBtn>
-          <IconBtn label="Close" onClick={() => ui.setSidebarMobile(false)} className="lg:hidden"><X size={18} /></IconBtn>
+          <IconBtn label={tr(s.lang, 'Close', 'Cerrar')} onClick={() => ui.setSidebarMobile(false)} className="lg:hidden"><X size={18} /></IconBtn>
         </div>
         <div className="px-2 pb-2">
           <button onClick={ui.newIdea} className={cx('flex h-10 w-full items-center gap-2.5 rounded-lg border border-line bg-surface px-3 text-sm font-medium transition-colors hover:border-accent/60', collapsed && 'lg:justify-center lg:px-0')} title={t('newIdea')}>

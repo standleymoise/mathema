@@ -1,3 +1,4 @@
+import { provLabel } from '../../core/analyzer'
 import { useMemo, useState } from 'react'
 import { Copy, FlaskConical, Pencil, Trash2 } from 'lucide-react'
 import type { MathModel } from '../../core/types'
@@ -52,6 +53,7 @@ export function ModelsView() {
   )
 }
 
+export const EXP_TYPE: Record<string, [string, string]> = { 'scenario-comparison': ['scenario comparison', 'comparación de escenarios'], sensitivity: ['sensitivity', 'sensibilidad'], fit: ['fit', 'ajuste'] }
 export function ExperimentsView() {
   const t = useT()
   const lang = useStore((s) => s.ui.lang)
@@ -60,7 +62,7 @@ export function ExperimentsView() {
   const run = () => {
     const m = db.models.find((x) => x.id === mid)
     if (!m) { toast(tr(lang, 'Choose a model first.', 'Elegí primero un modelo.'), 'warn'); return }
-    const s = sensitivity(m, baseParams(m))
+    const s = sensitivity(m, baseParams(m), 0.2, lang)
     if (!s || !s.rows.length) { toast(tr(lang, 'This model has no adjustable numeric parameters.', 'Este modelo no tiene parámetros numéricos ajustables.'), 'warn'); return }
     records.addExperiment({ modelId: m.id, name: `${tr(lang, 'Sensitivity', 'Sensibilidad')} ±20% — ${m.title}`, type: 'sensitivity', provenance: 'simulated', rows: s.rows.map((r) => ({ label: r.name, value: `${fmt(r.low)} → ${fmt(r.high)} (Δ ${fmt(r.swing)})` })), note: `One-at-a-time ±20% on "${s.metric.label}". Simulated; ignores interactions.` })
     toast(tr(lang, 'Experiment saved.', 'Experimento guardado.'))
@@ -68,13 +70,13 @@ export function ExperimentsView() {
   return (
     <PageShell title={t('experiments')} sub={tr(lang, 'Scenario comparisons and sensitivity runs. All values are simulated model outputs, never observations.', 'Comparaciones de escenarios y análisis de sensibilidad. Todos los valores son salidas simuladas del modelo, nunca observaciones.')}>
       <section className="mb-6 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface p-3">
-        <select value={mid} onChange={(e) => setMid(e.target.value)} aria-label="Model" className="h-10 min-w-0 flex-1 rounded-lg border border-line bg-bg px-3 text-sm"><option value="">{tr(lang, 'Choose a model…', 'Elegí un modelo…')}</option>{db.models.map((m) => <option key={m.id} value={m.id}>{m.title}</option>)}</select>
+        <select value={mid} onChange={(e) => setMid(e.target.value)} aria-label={tr(lang, 'Model', 'Modelo')} className="h-10 min-w-0 flex-1 rounded-lg border border-line bg-bg px-3 text-sm"><option value="">{tr(lang, 'Choose a model…', 'Elegí un modelo…')}</option>{db.models.map((m) => <option key={m.id} value={m.id}>{m.title}</option>)}</select>
         <Btn variant="primary" onClick={run}><FlaskConical size={15} />{tr(lang, 'Run sensitivity', 'Ejecutar sensibilidad')}</Btn>
       </section>
       {db.experiments.length === 0 ? <EmptyState title={t('empty')} hint={tr(lang, 'Run one above, or open a model workspace and save a scenario comparison.', 'Ejecutá uno arriba, o abrí el espacio de un modelo y guardá una comparación.')} /> : (
         <ul className="space-y-3">{db.experiments.map((e) => { const m = db.models.find((x) => x.id === e.modelId); return (
           <li key={e.id} className="rounded-xl border border-line bg-surface p-4">
-            <div className="flex items-start justify-between gap-3"><div><div className="serif text-lg">{e.name}</div><div className="text-xs text-mute">{e.type} · {e.provenance} · {new Date(e.createdAt).toLocaleDateString()}</div></div>
+            <div className="flex items-start justify-between gap-3"><div><div className="serif text-lg">{e.name}</div><div className="text-xs text-mute">{tr(lang, ...(EXP_TYPE[e.type] ?? [e.type, e.type]))} · {provLabel(e.provenance, lang)} · {new Date(e.createdAt).toLocaleDateString()}</div></div>
               <IconBtn label={t('delete')} className="-mr-2 -mt-1" onClick={() => records.removeExperiment(e.id)}><Trash2 size={16} /></IconBtn></div>
             <table className="mt-3 w-full text-[13px]"><tbody>{e.rows.map((r, i) => <tr key={i} className="border-t border-line"><td className="py-1.5 pr-3">{r.label}</td><td className="py-1.5 text-right font-mono text-[12.5px] text-mute">{r.value}</td></tr>)}</tbody></table>
             <p className="mt-2 text-xs text-mute">{e.note}</p>

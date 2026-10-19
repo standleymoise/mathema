@@ -1,3 +1,4 @@
+import { tr } from '../core/text'
 import { useEffect } from 'react'
 import { Menu, PanelRight } from 'lucide-react'
 import Sidebar from './layout/Sidebar'
@@ -35,13 +36,13 @@ export default function App() {
 
   return (
     <div className="flex h-dvh w-full overflow-hidden bg-bg text-ink">
-      <a href="#main" className="sr-only z-[100] rounded bg-surface p-2 focus:not-sr-only focus:fixed focus:left-2 focus:top-2">Skip to content</a>
+      <a href="#main" className="sr-only z-[100] rounded bg-surface p-2 focus:not-sr-only focus:fixed focus:left-2 focus:top-2">{tr(s.lang, 'Skip to content', 'Saltar al contenido')}</a>
       <Sidebar />
       <main id="main" className="relative flex min-w-0 flex-1 flex-col">
         <header className="flex h-14 shrink-0 items-center gap-1 border-b border-line/70 px-2 sm:px-3">
           <IconBtn label={t('expand')} className="lg:hidden" onClick={() => ui.setSidebarMobile(true)}><Menu size={20} /></IconBtn>
           {inChat && model ? (
-            <div role="tablist" aria-label="View" className="flex rounded-lg border border-line p-0.5">
+            <div role="tablist" aria-label={tr(s.lang, 'View', 'Vista')} className="flex rounded-lg border border-line p-0.5">
               {(['conversation', 'workspace'] as const).map((tab) => (
                 <button key={tab} role="tab" aria-selected={s.tab === tab} onClick={() => ui.setTab(tab)} className={cx('h-8 rounded-md px-3 text-[13px] font-medium transition-colors', s.tab === tab ? 'bg-accent-soft text-accent' : 'text-mute hover:text-ink')}>{t(tab)}</button>
               ))}

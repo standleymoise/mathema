@@ -81,11 +81,12 @@ export function CopyBtn({ text, label }: { text: string; label: string }) {
 /** Editable, copyable, validated equation. Only valid expressions are propagated. */
 export function EquationEditor({ label, expr, onChange, knownVars, lhs }: { label: string; expr: string; onChange: (e: string) => void; knownVars: string[]; lhs?: string }) {
   const t = useT()
+  const lang = useStore((s) => s.ui.lang)
   const [draft, setDraft] = useState(expr)
   const [editing, setEditing] = useState(false)
   const c = compile(draft)
   const unknown = c.ok ? c.vars.filter((v) => !knownVars.includes(v)) : []
-  const error = !c.ok ? c.error : unknown.length ? `Unknown variable: ${unknown.join(', ')}` : null
+  const error = !c.ok ? c.error : unknown.length ? tr(lang, `Unknown variable: ${unknown.join(', ')}`, `Variable desconocida: ${unknown.join(', ')}`) : null
   const tex = toLatex(expr)
   return (
     <section className="rounded-xl border border-line bg-surface p-4">
@@ -93,15 +94,15 @@ export function EquationEditor({ label, expr, onChange, knownVars, lhs }: { labe
         <Label>{label}</Label>
         <div className="-mt-1 flex items-center">
           <CopyBtn text={expr} label={t('copy')} />
-          <Btn size="sm" variant="ghost" onClick={() => { setEditing(!editing); setDraft(expr) }}>{editing ? t('cancel') : 'Edit'}</Btn>
+          <Btn size="sm" variant="ghost" onClick={() => { setEditing(!editing); setDraft(expr) }}>{editing ? t('cancel') : tr(lang, 'Edit', 'Editar')}</Btn>
         </div>
       </div>
       {tex && <div className="serif overflow-x-auto text-lg"><Eq latex={`${lhs ? lhs + ' = ' : ''}${tex}`} /></div>}
       {editing && (
         <div className="mt-2">
-          <input aria-label="Equation expression" spellCheck={false} value={draft} onChange={(e) => { setDraft(e.target.value); const cc = compile(e.target.value); if (cc.ok && cc.vars.every((v) => knownVars.includes(v))) onChange(e.target.value) }}
+          <input aria-label={tr(lang, 'Equation expression', 'Expresión de la ecuación')} spellCheck={false} value={draft} onChange={(e) => { setDraft(e.target.value); const cc = compile(e.target.value); if (cc.ok && cc.vars.every((v) => knownVars.includes(v))) onChange(e.target.value) }}
             className={cx('h-10 w-full rounded-lg border bg-bg px-3 font-mono text-[13px] outline-none', error ? 'border-bad' : 'border-line focus:border-accent')} />
-          <p className={cx('mt-1.5 text-xs', error ? 'text-bad' : 'text-mute')} role={error ? 'alert' : undefined}>{error ?? `Variables: ${knownVars.join(', ')} · functions: exp ln sqrt sin cos min max abs pow`}</p>
+          <p className={cx('mt-1.5 text-xs', error ? 'text-bad' : 'text-mute')} role={error ? 'alert' : undefined}>{error ?? tr(lang, `Variables: ${knownVars.join(', ')} · functions: exp ln sqrt sin cos min max abs pow`, `Variables: ${knownVars.join(', ')} · funciones: exp ln sqrt sin cos min max abs pow`)}</p>
         </div>
       )}
     </section>
@@ -110,30 +111,31 @@ export function EquationEditor({ label, expr, onChange, knownVars, lhs }: { labe
 
 export function ScenarioPanel({ model, params, onApply, setName }: { model: MathModel; params: Params; onApply: (p: Params) => void; setName: (n: string) => void }) {
   const t = useT()
+  const lang = useStore((s) => s.ui.lang)
   const [name, setNm] = useState('')
-  const cur = metric(model, params)
+  const cur = metric(model, params, lang)
   const rows = model.scenarios.map((s, i) => ({ s, i, m: metric(model, { ...params, ...s.params }) }))
   return (
     <section className="rounded-xl border border-line bg-surface p-4">
       <Label>{t('scenarios')}</Label>
-      <form className="mb-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); models.addScenario(model.id, name || `Scenario ${model.scenarios.length + 1}`, { ...params }); setNm(''); setName('') }}>
-        <input value={name} onChange={(e) => setNm(e.target.value)} placeholder={`Scenario ${model.scenarios.length + 1}`} aria-label="Scenario name" className="h-9 min-w-0 flex-1 rounded-lg border border-line bg-bg px-3 text-sm outline-none focus:border-accent" />
+      <form className="mb-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); models.addScenario(model.id, name || `${tr(lang, 'Scenario', 'Escenario')} ${model.scenarios.length + 1}`, { ...params }); setNm(''); setName('') }}>
+        <input value={name} onChange={(e) => setNm(e.target.value)} placeholder={`${tr(lang, 'Scenario', 'Escenario')} ${model.scenarios.length + 1}`} aria-label={tr(lang, 'Scenario name', 'Nombre del escenario')} className="h-9 min-w-0 flex-1 rounded-lg border border-line bg-bg px-3 text-sm outline-none focus:border-accent" />
         <Btn type="submit" variant="outline" size="sm" className="h-9">{t('saveScenario')}</Btn>
       </form>
       {cur && (
         <div className="overflow-x-auto">
           <table className="w-full text-[13px]">
-            <caption className="sr-only">Scenario comparison</caption>
-            <thead><tr className="text-left text-[11px] uppercase tracking-wide text-mute"><th className="pb-1 font-medium">Scenario</th><th className="pb-1 text-right font-medium">{cur.label}</th><th /></tr></thead>
+            <caption className="sr-only">{tr(lang, 'Scenario comparison', 'Comparación de escenarios')}</caption>
+            <thead><tr className="text-left text-[11px] uppercase tracking-wide text-mute"><th className="pb-1 font-medium">{tr(lang, 'Scenario', 'Escenario')}</th><th className="pb-1 text-right font-medium">{cur.label}</th><th /></tr></thead>
             <tbody>
-              <tr className="border-t border-line"><td className="py-1.5"><span className="mr-2 inline-block h-2 w-2 rounded-full" style={{ background: SERIES[0] }} />Current (unsaved edits)</td><td className="py-1.5 text-right font-mono">{fmt(cur.value)}</td><td /></tr>
+              <tr className="border-t border-line"><td className="py-1.5"><span className="mr-2 inline-block h-2 w-2 rounded-full" style={{ background: SERIES[0] }} />{tr(lang, 'Current (unsaved edits)', 'Actual (cambios sin guardar)')}</td><td className="py-1.5 text-right font-mono">{fmt(cur.value)}</td><td /></tr>
               {rows.map(({ s, i, m }: { s: Scenario; i: number; m: ReturnType<typeof metric> }) => (
                 <tr key={s.id} className="border-t border-line">
                   <td className="py-1.5"><span className="mr-2 inline-block h-2 w-2 rounded-full" style={{ background: SERIES[(i + 1) % SERIES.length] }} />{s.name}</td>
                   <td className="py-1.5 text-right font-mono">{m ? fmt(m.value) : '—'}{m && cur ? <span className="ml-2 text-[11px] text-mute">{m.value >= cur.value ? '+' : ''}{fmt(((m.value - cur.value) / (cur.value || 1)) * 100, 1)}%</span> : null}</td>
                   <td className="whitespace-nowrap text-right">
-                    <Btn size="sm" variant="ghost" onClick={() => onApply({ ...params, ...s.params })}>Apply</Btn>
-                    <IconBtn label={`Delete ${s.name}`} className="h-8 w-8" onClick={() => models.removeScenario(model.id, s.id)}><Trash2 size={14} /></IconBtn>
+                    <Btn size="sm" variant="ghost" onClick={() => onApply({ ...params, ...s.params })}>{tr(lang, 'Apply', 'Aplicar')}</Btn>
+                    <IconBtn label={`${tr(lang, 'Delete', 'Eliminar')} ${s.name}`} className="h-8 w-8" onClick={() => models.removeScenario(model.id, s.id)}><Trash2 size={14} /></IconBtn>
                   </td>
                 </tr>
               ))}
@@ -141,7 +143,7 @@ export function ScenarioPanel({ model, params, onApply, setName }: { model: Math
           </table>
         </div>
       )}
-      <p className="mt-2 text-xs text-mute">Scenario values are model outputs (simulated), not observations.</p>
+      <p className="mt-2 text-xs text-mute">{tr(lang, 'Scenario values are model outputs (simulated), not observations.', 'Los valores de los escenarios son resultados del modelo (simulados), no observaciones.')}</p>
     </section>
   )
 }

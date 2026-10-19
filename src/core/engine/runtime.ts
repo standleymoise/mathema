@@ -1,5 +1,5 @@
 // Bridges typed models to the numeric engine. Pure functions only: no React, no IA.
-import type { MathModel, OptimizationSpec, Variable } from '../types'
+import type { Lang, MathModel, OptimizationSpec, Variable } from '../types'
 import { compile } from './expr'
 import { integrate } from './ode'
 import { solveLP } from './lp'
@@ -48,35 +48,36 @@ export function optimizationWith(spec: OptimizationSpec, params: Params): Optimi
 }
 
 /** One scalar summary per model kind, used for sensitivity analysis. Returns null if undefined. */
-export function metric(m: MathModel, params: Params): { label: string; value: number } | null {
+export function metric(m: MathModel, params: Params, lang: Lang = 'en'): { label: string; value: number } | null {
+  const es = lang === 'es'
   const spec = m.spec
   if (spec.kind === 'function') {
     const s = sampleFunction(m, params, 100)
     if (!s.ok) return null
     const ys = s.pts.map((p) => p.y).filter(Number.isFinite)
-    return { label: `mean of ${spec.yLabel} over [${spec.xMin}, ${spec.xMax}]`, value: ys.reduce((a, b) => a + b, 0) / ys.length }
+    return { label: es ? `promedio de ${spec.yLabel} en [${spec.xMin}, ${spec.xMax}]` : `mean of ${spec.yLabel} over [${spec.xMin}, ${spec.xMax}]`, value: ys.reduce((a, b) => a + b, 0) / ys.length }
   }
   if (spec.kind === 'dynamic') {
     const r = integrate({ states: spec.states, params, tEnd: spec.tEnd, steps: 120 })
     if (!r.ok) return null
     const id = spec.states[0].id
-    return { label: `${spec.states[0].label} at t = ${spec.tEnd}`, value: r.series[id][r.series[id].length - 1] }
+    return { label: es ? `${spec.states[0].label} en t = ${spec.tEnd}` : `${spec.states[0].label} at t = ${spec.tEnd}`, value: r.series[id][r.series[id].length - 1] }
   }
   if (spec.kind === 'optimization') {
     const s = solveLP(optimizationWith(spec, params))
-    return s.feasible ? { label: `optimal ${spec.objectiveLabel}`, value: s.value } : null
+    return s.feasible ? { label: es ? `${spec.objectiveLabel} óptimo` : `optimal ${spec.objectiveLabel}`, value: s.value } : null
   }
   if (spec.kind === 'regression') {
     const f = fitPoly(spec.x, spec.y, spec.degree)
-    return f.ok ? { label: 'fitted slope at mean x', value: f.coef[1] + (f.degree === 2 ? 2 * f.coef[2] * (spec.x.reduce((a, b) => a + b, 0) / spec.x.length) : 0) } : null
+    return f.ok ? { label: es ? 'pendiente ajustada en el x promedio' : 'fitted slope at mean x', value: f.coef[1] + (f.degree === 2 ? 2 * f.coef[2] * (spec.x.reduce((a, b) => a + b, 0) / spec.x.length) : 0) } : null
   }
   return null
 }
 
 export interface SensitivityRow { symbol: string; name: string; low: number; high: number; base: number; swing: number }
 /** One-at-a-time ±pct perturbation. Deterministic; says nothing about interactions. */
-export function sensitivity(m: MathModel, params: Params, pct = 0.2) {
-  const base = metric(m, params)
+export function sensitivity(m: MathModel, params: Params, pct = 0.2, lang: Lang = 'en') {
+  const base = metric(m, params, lang)
   if (!base) return null
   const rows: SensitivityRow[] = []
   for (const v of adjustable(m)) {

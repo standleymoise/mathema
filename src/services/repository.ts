@@ -13,6 +13,7 @@ export interface Repository {
 }
 
 const KEY = 'mathema:db:v1'
+const savedLang = (): 'en' | 'es' => { try { return JSON.parse(localStorage.getItem('mathema:ui') ?? '{}').lang === 'es' ? 'es' : 'en' } catch { return 'en' } }
 
 export const localRepository: Repository = {
   id: 'local', label: 'Browser storage (demo mode)',
@@ -24,13 +25,13 @@ export const localRepository: Repository = {
         if (db.schema === 1 && Array.isArray(db.models)) return db
       }
     } catch { /* corrupted or blocked storage: fall through to seed */ }
-    return seedDB()
+    return seedDB(savedLang())
   },
   save(db) {
     try { localStorage.setItem(KEY, JSON.stringify(db)) } catch { /* quota / private mode: state stays in memory */ }
   },
   reset() {
-    const db = seedDB()
+    const db = seedDB(savedLang())
     try { localStorage.setItem(KEY, JSON.stringify(db)) } catch { /* ignore */ }
     return db
   },

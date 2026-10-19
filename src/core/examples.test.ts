@@ -29,3 +29,17 @@ describe('example gallery', () => {
     expect(EXAMPLES.filter((e) => e.group === 'idea')).toHaveLength(6)
   })
 })
+
+import { seedDB } from './demo'
+import { localizeDemos } from './examples'
+describe('demo localisation', () => {
+  it('re-renders untouched demos in Spanish and keeps edited ones', () => {
+    const db = seedDB('en')
+    db.models[1] = { ...db.models[1], version: 2 }
+    const es = localizeDemos(db, 'es')
+    expect(es.models[0].title).toMatch(/Respuesta/)
+    expect(es.models[1].title).toBe(db.models[1].title)
+    expect(es.sources[0].title).toMatch(/Datos demo/)
+    expect(localizeDemos(es, 'en').models[0].title).toMatch(/response/i)
+  })
+})
