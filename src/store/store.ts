@@ -4,7 +4,7 @@ import { useSyncExternalStore } from 'react'
 import type { ChatMessage, Conversation, DB, Experiment, Lang, MathModel, Mode, Proposal, RelationType, Scenario, Source } from '../core/types'
 import { repository } from '../services/repository'
 import { AIUnavailable, analyzeWithServer, localProvider } from '../services/ai'
-import { api, type ServerUser, type Usage } from '../services/api'
+import { api, type PlanFeatures, type ServerUser, type Usage } from '../services/api'
 import { mergeDB } from '../core/merge'
 import { parseTable, type Dataset } from '../core/analyzer'
 import { findRelated } from '../core/memory'
@@ -15,7 +15,7 @@ import { translate, type Key } from '../i18n'
 
 export type View = 'chat' | 'models' | 'experiments' | 'universe' | 'sources' | 'settings' | 'search' | 'admin' | 'pricing' | 'legal'
 export type LegalDoc = 'terms' | 'privacy' | 'ai'
-export interface PlanPub { id: string; name: string; priceCents: number; intervalUnit: 'month' | 'year'; aiMonthlyQuota: number | null; purchasable: boolean }
+export interface PlanPub { id: string; name: string; priceCents: number; intervalUnit: 'month' | 'year'; aiMonthlyQuota: number | null; purchasable: boolean; features: PlanFeatures }
 export type Tab = 'conversation' | 'workspace'
 
 interface UI {
@@ -46,8 +46,9 @@ interface ServerState {
   plans: PlanPub[]
   aiAvailable: boolean
   user: ServerUser | null
-  sync: 'idle' | 'saving' | 'saved' | 'error'
+  sync: 'idle' | 'saving' | 'saved' | 'error' | 'off' | 'limit'
   usage: Usage | null
+  features: PlanFeatures | null
 }
 interface State { db: DB; ui: UI; server: ServerState }
 
@@ -63,7 +64,7 @@ function loadUI(): UI {
   }
 }
 
-let state: State = { db: repository.load(), ui: loadUI(), server: { checked: false, available: false, signupMode: 'closed', billingEnabled: false, legal: { entity: '', email: '' }, plans: [], aiAvailable: false, user: null, sync: 'idle', usage: null } }
+let state: State = { db: repository.load(), ui: loadUI(), server: { checked: false, available: false, signupMode: 'closed', billingEnabled: false, legal: { entity: '', email: '' }, plans: [], aiAvailable: false, user: null, sync: 'idle', usage: null, features: null } }
 const listeners = new Set<() => void>()
 const emit = () => listeners.forEach((l) => l())
 export const subscribe = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l) } }
@@ -114,7 +115,7 @@ export const ui = {
   openSource: (id: string) => setUI({ view: 'sources', focusId: id, sidebarOpenMobile: false }),
   openInUniverse: (id: string) => setUI({ view: 'universe', focusId: id, sidebarOpenMobile: false }),
   clearFocus: () => setUI({ focusId: null }),
-  newIdea: () => setUI({ view: 'chat', activeConvId: null, tab: 'conversation', sidebarOpenMobile: false }),
+  newIdea: () => setUI({ view: 'chat', activeConvId: null, selectedModelId: null, tab: 'conversation', sidebarOpenMobile: false }),
   openConversation: (id: string) => setUI({ view: 'chat', activeConvId: id, tab: 'conversation', sidebarOpenMobile: false }),
   selectModel: (id: string | null, opts: { workspace?: boolean } = {}) =>
     setUI({ selectedModelId: id, ...(opts.workspace ? { view: 'chat' as View, tab: 'workspace' as Tab, sidebarOpenMobile: false } : {}) }),
@@ -122,6 +123,13 @@ export const ui = {
 
 // ---- model actions --------------------------------------------------------------------
 const snap = (m: MathModel) => ({ title: m.title, description: m.description, variables: structuredClone(m.variables), equations: structuredClone(m.equations), assumptions: structuredClone(m.assumptions), spec: structuredClone(m.spec) })
+/** Plan limit on stored models (own models only; demos never count). Only applies to signed-in accounts. */
+export function modelLimitReached(): { reached: boolean; limit: number | null } {
+  const f = state.server.features
+  if (!state.server.user || !f || f.maxModels === null) return { reached: false, limit: null }
+  return { reached: state.db.models.filter((m) => !m.isDemo).length >= f.maxModels, limit: f.maxModels }
+}
+const limitMessage = (limit: number) => tr(state.ui.lang, `Your plan stores up to ${limit} models. Delete one you no longer need, or see Plans to get more room.`, `Tu plan guarda hasta ${limit} modelos. Eliminá uno que ya no uses, o mirá Planes para tener más lugar.`)
 export const getModel = (id: string | null | undefined) => (id ? state.db.models.find((m) => m.id === id) : undefined)
 
 export const models = {
@@ -144,6 +152,8 @@ export const models = {
   duplicate(id: string) {
     const m = getModel(id)
     if (!m) return
+    const lim = modelLimitReached()
+    if (lim.reached) { toast(limitMessage(lim.limit!), 'warn'); return }
     const copy: MathModel = { ...structuredClone(m), id: uid('mdl'), title: `${m.title} (copy)`, version: 1, versions: [], isDemo: m.isDemo, createdAt: now(), updatedAt: now() }
     setDB((db) => ({
       ...db, models: [...db.models, copy],
@@ -295,10 +305,12 @@ export async function sendMessage(text: string, files: AttachedFile[] = []) {
       try {
         const r = await analyzeWithServer({ text: body, lang, datasets, mode })
         analysis = r.analysis
+        if (r.downgraded) aiNote = L('Research mode used the standard model: the premium model is not included in your plan.', 'El modo Investigar usó el modelo estándar: el modelo premium no está incluido en tu plan.')
         if (r.quota) setServer({ usage: { ...(state.server.usage ?? { plan: '', resetsAt: '' }), used: r.quota.used, quota: r.quota.quota } })
       } catch (e) {
         const u = e instanceof AIUnavailable ? e : null
         const why = u?.code === 'quota_exceeded' ? L(`monthly AI quota reached (${u.extra.used}/${u.extra.quota}); see Plans in the sidebar to get more`, `cuota mensual de IA alcanzada (${u.extra.used}/${u.extra.quota}); mirá Planes en la barra lateral para tener más`)
+          : u?.code === 'input_too_long' ? L(`idea too long for AI on your plan (max ${u.extra.max} characters)`, `idea demasiado larga para la IA en tu plan (máx. ${u.extra.max} caracteres)`)
           : u?.code === 'daily_cap_reached' ? L('daily AI limit reached', 'límite diario de IA alcanzado')
           : u?.code === 'rejected_by_engine' ? L(`the AI proposal failed validation (${u.message})`, `la propuesta de la IA no pasó la validación (${u.message})`)
           : L(`AI unavailable (${u?.message ?? 'error'})`, `IA no disponible (${u?.message ?? 'error'})`)
@@ -315,6 +327,11 @@ export async function sendMessage(text: string, files: AttachedFile[] = []) {
     const pending = related.some((p) => p.suggestion === 'new-version')
     const intro = L(`I read this as a **${draft.kind}** problem about ${analysis.topic}. Central question: ${analysis.centralQuestion}`, `Lo leí como un problema de tipo **${draft.kind}** sobre ${analysis.topic}. Pregunta central: ${analysis.centralQuestion}`) + (aiNote ? `\n\n${aiNote}` : '')
 
+    const lim = modelLimitReached()
+    if (mode === 'model' && !pending && lim.reached) {
+      pushMessage(convId, { ...base, text: intro + '\n\n' + limitMessage(lim.limit!), formalization: analysis.formalization, pendingDraft: draft, engine: analysis.engine })
+      return
+    }
     if (mode === 'model' && !pending) {
       setDB((db) => ({ ...db, models: [...db.models, draft] }))
       const msg: ChatMessage = { ...base, modelId: draft.id, text: intro, formalization: analysis.formalization, proposals: related, engine: analysis.engine }
@@ -347,6 +364,8 @@ export function savePendingDraft(convId: string, msgId: string) {
   const conv = state.db.conversations.find((c) => c.id === convId)
   const msg = conv?.messages.find((m) => m.id === msgId)
   if (!msg?.pendingDraft) return null
+  const lim = modelLimitReached()
+  if (lim.reached) { toast(limitMessage(lim.limit!), 'warn'); return null }
   const draft = msg.pendingDraft
   setDB((db) => ({ ...db, models: [...db.models, draft] }))
   patchMessage(convId, msgId, (m) => ({ ...m, pendingDraft: undefined, modelId: draft.id }))
@@ -392,7 +411,7 @@ let serverVersion = 0
 let syncTimer: ReturnType<typeof setTimeout> | undefined
 
 function scheduleSync() {
-  if (!state.server.user) return
+  if (!state.server.user || state.server.features?.cloudSync === false) return
   clearTimeout(syncTimer)
   syncTimer = setTimeout(() => { void pushNow() }, 1500)
 }
@@ -408,6 +427,14 @@ async function pushNow(retry = true): Promise<void> {
     state = { ...state, db: mergeDB(state.db, r.data.data) }; repository.save(state.db); emit()
     applyingRemote = false
     return pushNow(false)
+  }
+  const code = (r.data as { error?: string } | null)?.error
+  if (r.status === 403 && code === 'feature_not_in_plan') { setServer({ sync: 'off' }); return }
+  if (r.status === 403 && code === 'model_limit') {
+    const d = r.data as unknown as { limit: number; count: number }
+    setServer({ sync: 'limit' })
+    toast(tr(state.ui.lang, `Cloud sync paused: your plan stores up to ${d.limit} models and you have ${d.count}. Delete some or see Plans.`, `Sincronización pausada: tu plan guarda hasta ${d.limit} modelos y tenés ${d.count}. Eliminá algunos o mirá Planes.`), 'warn')
+    return
   }
   setServer({ sync: 'error' })
 }
@@ -429,14 +456,14 @@ async function pullAndMerge(user: ServerUser) {
 }
 async function loadUsage() {
   const r = await api.get<Usage>('usage')
-  if (r.ok) setServer({ usage: r.data })
+  if (r.ok) setServer({ usage: r.data, features: r.data.features ?? state.server.features })
 }
 
 export const server = {
   async init() {
-    const r = await api.get<{ server: boolean; signupMode: ServerState['signupMode']; aiAvailable: boolean; billingEnabled: boolean; legal: ServerState['legal']; user: ServerUser | null }>('config')
+    const r = await api.get<{ server: boolean; signupMode: ServerState['signupMode']; aiAvailable: boolean; billingEnabled: boolean; legal: ServerState['legal']; user: ServerUser | null; features: PlanFeatures | null }>('config')
     if (!r.ok || !r.data?.server) { setServer({ checked: true, available: false }); return }
-    setServer({ checked: true, available: true, signupMode: r.data.signupMode, aiAvailable: r.data.aiAvailable, billingEnabled: r.data.billingEnabled, legal: r.data.legal, user: r.data.user })
+    setServer({ checked: true, available: true, signupMode: r.data.signupMode, aiAvailable: r.data.aiAvailable, billingEnabled: r.data.billingEnabled, legal: r.data.legal, user: r.data.user, features: r.data.features })
     void server.loadPlans()
     if (r.data.user) { await pullAndMerge(r.data.user); void loadUsage() }
     // coming back from PayPal: /?billing=success|pending|cancel|mismatch|unknown
@@ -473,8 +500,8 @@ export const server = {
       return tr(state.ui.lang, m[0], m[1])
     }
     setServer({ user: r.data.user })
-    const cfg = await api.get<{ aiAvailable: boolean }>('config')
-    if (cfg.ok) setServer({ aiAvailable: cfg.data.aiAvailable })
+    const cfg = await api.get<{ aiAvailable: boolean; features: PlanFeatures | null }>('config')
+    if (cfg.ok) setServer({ aiAvailable: cfg.data.aiAvailable, features: cfg.data.features })
     await pullAndMerge(r.data.user)
     void loadUsage()
     return null
@@ -484,7 +511,7 @@ export const server = {
     await pushNow()
     const saved = state.server.sync !== 'error'
     await api.post('auth/logout', {})
-    setServer({ user: null, usage: null, sync: 'idle' })
+    setServer({ user: null, usage: null, sync: 'idle', features: null })
     if (saved) {
       // data is safe in the account: leave no private models behind on this device
       try { localStorage.removeItem(SYNCED_KEY) } catch { /* ignore */ }
@@ -523,7 +550,7 @@ export const server = {
     if (!r.ok) return r.data?.error === 'invalid_credentials' ? L('Wrong password.', 'Contraseña incorrecta.') : r.data?.detail ?? L('Could not delete the account.', 'No se pudo eliminar la cuenta.')
     clearTimeout(syncTimer)
     try { localStorage.removeItem(SYNCED_KEY) } catch { /* ignore */ }
-    setServer({ user: null, usage: null, sync: 'idle' })
+    setServer({ user: null, usage: null, sync: 'idle', features: null })
     applyingRemote = true
     state = { ...state, db: repository.reset(), ui: { ...state.ui, activeConvId: null, selectedModelId: null, view: 'chat', tab: 'conversation' } }
     emit(); applyingRemote = false

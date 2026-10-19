@@ -2,6 +2,7 @@ import express from 'express'
 import { loadConfig } from './config.mjs'
 import { createPool, migrate } from './db.mjs'
 import { createApp } from './app.mjs'
+import { enforceGrace } from './billing.mjs'
 
 // The process must ALWAYS start listening, even when configuration is wrong: a crash-on-start makes the
 // host answer a bare "503" with no clue. Problems are logged and reported on /api/health instead.
@@ -20,6 +21,8 @@ if (cfg) {
       await migrate(pool, cfg)
       status.ready = true; status.problems = []
       console.log('[mathema] database ready')
+      const grace = async () => { try { const n = await enforceGrace(pool); if (n) console.log(`[mathema] ${n} customer(s) moved to Free after the grace period`) } catch (e) { console.error('[mathema] grace job failed:', e.message) } }
+      void grace(); setInterval(grace, 60 * 60 * 1000).unref()
     } catch (e) {
       status.ready = false
       // public message: error code only (the full text can contain the DB user name; it stays in the server log)

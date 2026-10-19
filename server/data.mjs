@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { requireUser } from './auth.mjs'
+import { featuresFor } from './features.mjs'
 
 /** One JSON document per user with optimistic concurrency (version). Models live inside it. */
 export function dataRoutes(pool) {
@@ -14,6 +15,10 @@ export function dataRoutes(pool) {
     if (!data || typeof data !== 'object' || data.schema !== 1 || !Array.isArray(data.models)) return res.status(400).json({ error: 'invalid_data' })
     const json = JSON.stringify(data)
     if (json.length > 5_000_000) return res.status(413).json({ error: 'too_large' })
+    const f = await featuresFor(pool, req.user)
+    if (!f.cloudSync) return res.status(403).json({ error: 'feature_not_in_plan', feature: 'cloudSync', detail: 'Cloud sync is not included in your plan' })
+    const own = data.models.filter((m) => m && m.isDemo !== true).length // the built-in demo models never count
+    if (f.maxModels !== null && own > f.maxModels) return res.status(403).json({ error: 'model_limit', limit: f.maxModels, count: own, detail: `Your plan stores up to ${f.maxModels} models; you have ${own}` })
     const conn = await pool.getConnection()
     try {
       await conn.beginTransaction()

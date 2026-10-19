@@ -41,6 +41,21 @@ Guides: **[Hostinger deploy](docs/DEPLOY-HOSTINGER.md)** · **[model selection](
 * PDFs and images can be attached as *references* but their content is not read (no OCR/vision). Text, Markdown, JSON and CSV are read.
 * Models generated from free text use **placeholder parameters**, labelled as hypotheses. Fits are not validation; correlation is not causation.
 
+## Plans: what is actually enforced
+
+Everything shown on a plan card is enforced **by the server** (Admin → Users & plans), not just displayed:
+
+| Setting | Enforced where |
+|---|---|
+| AI-assisted analyses per month | `/api/analyze` (402 when reached; calendar month, UTC) |
+| Premium model in Research mode | `/api/analyze` picks the research model only if the plan includes it; otherwise the default model (the reply says so) |
+| Max idea length for AI | `/api/analyze` (413), hard cap 12,000 characters |
+| Cloud sync | `PUT /api/data` is refused when the plan lacks it (reading your stored copy stays allowed) |
+| Max saved models | `PUT /api/data` (counts your own models, never the demo ones); the app also stops creating models and explains why |
+| Grace after a failed payment | an hourly job moves customers to Free once `past_due_grace_days` (default 7) pass; paying again restores the plan |
+
+Admins are never restricted. Downloading your own data is deliberately **not** gated by plan (the Privacy Policy promises it, and it is a copy the browser already holds). The seeded Free plan is restrictive (standard Research model, 4,000-character ideas, 50 models); custom plans start fully open until you edit them.
+
 ## PWA and caching (deliberately minimal)
 
 The service worker (`public/sw.js`) keeps **only the static app shell**: `index.html` (network-first, so a new deploy is always picked up when online), content-hashed `/assets/*` (cache-first; the file name changes on every build, so they can never be stale) and the manifest/icons. It **never** touches `/api/*` (accounts, AI, sync, PayPal), non-GET requests, other origins or error responses. A new version waits until the user taps **Update**. Each build stamps its own cache name (`vite.config.ts`) and old caches are deleted on activation. The Express server sends `no-cache` for `index.html`, `sw.js` and the manifest, and `immutable` only for hashed assets. If anything ever looks stale: **Settings → Install the app → Reset app cache** (account data is not affected). Edits made while the app is started offline are merged, not overwritten, when the connection returns.

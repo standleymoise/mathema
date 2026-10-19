@@ -7,6 +7,7 @@ import { call, ProviderError } from './ai/providers.mjs'
 import { SYSTEM_PROMPT, userPrompt } from './ai/prompt.mjs'
 import { extractJson, validateProposal, ProposalError } from './ai/proposal.mjs'
 import { computeCost } from './ai/cost.mjs'
+import { featuresFor } from './features.mjs'
 
 const MODES = new Set(['understand', 'model', 'experiment', 'research', 'connect'])
 const monthStart = (d = new Date()) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1))
@@ -16,7 +17,7 @@ export async function usageFor(pool, user) {
   const [[row]] = await pool.query("SELECT COUNT(*) n FROM usage_log WHERE user_id=? AND app='mathema' AND ok=1 AND created_at>=?", [user.id, monthStart()])
   const quota = user.role === 'admin' ? null : plan?.ai_monthly_quota ?? null
   const next = monthStart(); next.setUTCMonth(next.getUTCMonth() + 1)
-  return { used: Number(row.n), quota, plan: plan?.name ?? user.plan_id, resetsAt: next.toISOString() }
+  return { used: Number(row.n), quota, plan: plan?.name ?? user.plan_id, resetsAt: next.toISOString(), features: await featuresFor(pool, user) }
 }
 
 export function analyzeRoutes(pool, cfg, deps = {}) {
@@ -31,9 +32,12 @@ export function analyzeRoutes(pool, cfg, deps = {}) {
     const lang = req.body?.lang === 'es' ? 'es' : 'en'
     const mode = MODES.has(req.body?.mode) ? req.body.mode : 'model'
     if (!text) return res.status(400).json({ error: 'empty_input' })
-    if (text.length > 12000) return res.status(413).json({ error: 'input_too_long', max: 12000 })
-
-    const pick = await getSetting(pool, mode === 'research' ? 'ai_research' : 'ai_default')
+    const features = await featuresFor(pool, req.user)
+    if (text.length > features.aiMaxChars) return res.status(413).json({ error: 'input_too_long', max: features.aiMaxChars, detail: `Ideas for AI analysis are limited to ${features.aiMaxChars} characters on your plan` })
+    // Research mode only gets the premium model on plans that include it; others transparently use the default model
+    const research = mode === 'research' && features.researchPremium
+    const downgraded = mode === 'research' && !features.researchPremium
+    const pick = await getSetting(pool, research ? 'ai_research' : 'ai_default')
     const [prices] = await pool.query('SELECT * FROM model_prices WHERE provider=? AND model=? AND enabled=1', [pick.provider, pick.model])
     if (!prices.length) return res.status(503).json({ error: 'model_not_enabled', detail: `${pick.provider}/${pick.model} is not enabled in the admin panel` })
     const apiKey = await getApiKey(pool, cfg, pick.provider)
@@ -69,7 +73,7 @@ export function analyzeRoutes(pool, cfg, deps = {}) {
     try {
       const proposal = validateProposal(extractJson(result.text))
       const after = await usageFor(pool, req.user)
-      res.json({ proposal, meta: { provider: pick.provider, model: pick.model, usage: result.usage, quota: { used: after.used, quota: after.quota } } })
+      res.json({ proposal, meta: { provider: pick.provider, model: pick.model, usage: result.usage, quota: { used: after.used, quota: after.quota }, downgraded } })
     } catch (e) {
       await pool.query('UPDATE usage_log SET ok=0, error=? WHERE id=?', [String(e.message).slice(0, 250), row.id])
       res.status(502).json({ error: 'invalid_model_output', detail: e instanceof ProposalError ? e.message : 'unparseable output' })

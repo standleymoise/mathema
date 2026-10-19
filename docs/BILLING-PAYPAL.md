@@ -25,7 +25,7 @@ Repeat step 1 in the **Live** tab (new Client ID/Secret, a **live** plan with it
 | Customer returns, subscription `ACTIVE` | plan = Pro, subscription `active` |
 | `BILLING.SUBSCRIPTION.ACTIVATED` | same (idempotent) |
 | `PAYMENT.SALE.COMPLETED` (USD) | payment recorded once (gross) |
-| `…SUSPENDED` / `PAYMENT.FAILED` | `past_due` (excluded from MRR, shown as "at-risk") |
+| `…SUSPENDED` / `PAYMENT.FAILED` | `past_due` (excluded from MRR, shown as "at-risk"); the customer **keeps the paid plan for the grace period** (Admin → Users & plans, default 7 days), then an hourly job moves them to Free. A later successful payment restores the plan |
 | `…CANCELLED` / `EXPIRED` / customer cancels | `canceled`, plan back to Free |
 | `PAYMENT.SALE.REFUNDED` / `REVERSED` (chargeback) | **negative payment** in the month it happens, matched to the original sale (or to the subscription); idempotent |
 | `CUSTOMER.DISPUTE.CREATED` | audit-log entry only (funds may be held; you must respond in PayPal) |

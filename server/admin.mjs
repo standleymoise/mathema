@@ -7,6 +7,7 @@ import { PROVIDERS, verifyKey } from './ai/providers.mjs'
 import { loadFinance } from './finance.mjs'
 import { paypalConfig, ppToken, PayPalError } from './billing.mjs'
 import { randomBytes } from 'node:crypto'
+import { parseFeatures, validateFeatures } from './features.mjs'
 
 const bad = (res, msg) => res.status(400).json({ error: 'invalid', detail: msg })
 const money = (v) => { const n = Number(v); return Number.isFinite(n) && n >= 0 ? n : null }
@@ -64,6 +65,7 @@ export function adminRoutes(pool, cfg) {
     aiDefault: await getSetting(pool, 'ai_default'), aiResearch: await getSetting(pool, 'ai_research'), aiEffort: await getSetting(pool, 'ai_effort'),
     signupMode: await getSetting(pool, 'signup_mode'), dailyCapPerUser: await getSetting(pool, 'daily_cap_per_user'),
     legalEntity: await getSetting(pool, 'legal_entity'), legalEmail: await getSetting(pool, 'legal_email'),
+    pastDueGraceDays: await getSetting(pool, 'past_due_grace_days'),
     paypalFeePercent: await getSetting(pool, 'paypal_fee_percent'), paypalFeeFixedCents: await getSetting(pool, 'paypal_fee_fixed_cents'),
   }))
   r.put('/settings', async (req, res) => {
@@ -76,6 +78,7 @@ export function adminRoutes(pool, cfg) {
       await setSetting(pool, k, { provider: b[key].provider, model: b[key].model })
     }
     if (b.aiEffort !== undefined) { if (!['low', 'medium', 'high'].includes(b.aiEffort)) return bad(res, 'effort must be low, medium or high'); await setSetting(pool, 'ai_effort', b.aiEffort) }
+    if (b.pastDueGraceDays !== undefined) { const n = Number(b.pastDueGraceDays); if (!Number.isInteger(n) || n < 0 || n > 60) return bad(res, 'grace days must be an integer 0-60'); await setSetting(pool, 'past_due_grace_days', n) }
     if (b.signupMode !== undefined) { if (!['open', 'invite', 'closed'].includes(b.signupMode)) return bad(res, 'signupMode must be open, invite or closed'); await setSetting(pool, 'signup_mode', b.signupMode) }
     if (b.paypalFeePercent !== undefined) { const n = Number(b.paypalFeePercent); if (!Number.isFinite(n) || n < 0 || n > 30) return bad(res, 'fee percent must be between 0 and 30'); await setSetting(pool, 'paypal_fee_percent', n) }
     if (b.paypalFeeFixedCents !== undefined) { const n = Number(b.paypalFeeFixedCents); if (!Number.isInteger(n) || n < 0 || n > 1000) return bad(res, 'fixed fee (cents) must be an integer between 0 and 1000'); await setSetting(pool, 'paypal_fee_fixed_cents', n) }
@@ -111,7 +114,7 @@ export function adminRoutes(pool, cfg) {
     res.json({ ok: true })
   })
 
-  r.get('/plans', async (_req, res) => { const [rows] = await pool.query('SELECT id,name,price_cents priceCents,interval_unit intervalUnit,ai_monthly_quota aiMonthlyQuota,paypal_plan_id paypalPlanId,active FROM plans ORDER BY price_cents'); res.json(rows.map((p) => ({ ...p, active: !!p.active }))) })
+  r.get('/plans', async (_req, res) => { const [rows] = await pool.query('SELECT id,name,price_cents priceCents,interval_unit intervalUnit,ai_monthly_quota aiMonthlyQuota,paypal_plan_id paypalPlanId,features,active FROM plans ORDER BY price_cents'); res.json(rows.map((p) => ({ ...p, features: parseFeatures(p.features), active: !!p.active }))) })
   r.put('/plans', async (req, res) => {
     const b = req.body ?? {}
     if (!/^[a-z0-9_-]{2,32}$/.test(String(b.id))) return bad(res, 'plan id: 2-32 chars a-z 0-9 _ -')
@@ -119,8 +122,10 @@ export function adminRoutes(pool, cfg) {
     if (!Number.isInteger(price) || price < 0 || (quota !== null && (!Number.isInteger(quota) || quota < 0))) return bad(res, 'price (cents) and quota must be non-negative integers')
     const ppid = b.paypalPlanId === undefined || b.paypalPlanId === null || b.paypalPlanId === '' ? null : String(b.paypalPlanId).trim()
     if (ppid !== null && !/^P-[A-Z0-9]{10,60}$/i.test(ppid)) return bad(res, 'PayPal plan id looks like P-XXXXXXXXXXXX (copy it from PayPal → Subscriptions → Plans)')
-    await pool.query('INSERT INTO plans (id,name,price_cents,interval_unit,ai_monthly_quota,paypal_plan_id,active) VALUES (?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE name=VALUES(name), price_cents=VALUES(price_cents), interval_unit=VALUES(interval_unit), ai_monthly_quota=VALUES(ai_monthly_quota), paypal_plan_id=VALUES(paypal_plan_id), active=VALUES(active)',
-      [b.id, String(b.name || b.id).slice(0, 80), price, b.intervalUnit === 'year' ? 'year' : 'month', quota, ppid, b.active === false ? 0 : 1])
+    let feats = null // undefined = keep what the plan already has
+    if (b.features !== undefined) { const v = validateFeatures(b.features); if (typeof v === 'string') return bad(res, v); feats = JSON.stringify(v) }
+    await pool.query('INSERT INTO plans (id,name,price_cents,interval_unit,ai_monthly_quota,paypal_plan_id,features,active) VALUES (?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE name=VALUES(name), price_cents=VALUES(price_cents), interval_unit=VALUES(interval_unit), ai_monthly_quota=VALUES(ai_monthly_quota), paypal_plan_id=VALUES(paypal_plan_id), features=COALESCE(VALUES(features), features), active=VALUES(active)',
+      [b.id, String(b.name || b.id).slice(0, 80), price, b.intervalUnit === 'year' ? 'year' : 'month', quota, ppid, feats, b.active === false ? 0 : 1])
     await audit(pool, req.user.id, 'plan.upsert', b.id)
     res.json({ ok: true })
   })

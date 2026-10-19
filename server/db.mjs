@@ -1,6 +1,7 @@
 import mysql from 'mysql2/promise'
 import { SCHEMA, SEED_PLANS, SEED_PRICES, DEFAULT_SETTINGS, COLUMNS, STATUS_ENUM } from './schema.mjs'
 import { hashPassword } from './crypto.mjs'
+import { SEED_FEATURES } from './features.mjs'
 
 export function createPool(db) {
   return mysql.createPool({ ...db, waitForConnections: true, connectionLimit: 8, connectTimeout: 8000, timezone: 'Z', charset: 'utf8mb4', dateStrings: false, decimalNumbers: true })
@@ -25,6 +26,7 @@ export async function migrate(pool, cfg) {
   if (legacy.length && legacy[0].v === 'false') await pool.query("INSERT IGNORE INTO settings (k,v) VALUES ('signup_mode','\"closed\"')")
   for (const [id, name, price, unit, quota, active] of SEED_PLANS)
     await pool.query('INSERT IGNORE INTO plans (id,name,price_cents,interval_unit,ai_monthly_quota,active) VALUES (?,?,?,?,?,?)', [id, name, price, unit, quota, active])
+  for (const [id, f] of Object.entries(SEED_FEATURES)) await pool.query('UPDATE plans SET features=? WHERE id=? AND features IS NULL', [JSON.stringify(f), id])
   for (const [provider, model, label, i, o] of SEED_PRICES)
     await pool.query('INSERT IGNORE INTO model_prices (provider,model,label,input_per_mtok,output_per_mtok,enabled) VALUES (?,?,?,?,?,1)', [provider, model, label, i, o])
   for (const [k, v] of Object.entries(DEFAULT_SETTINGS))

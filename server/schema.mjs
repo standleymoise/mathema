@@ -153,6 +153,8 @@ export const SEED_PRICES = [
 // Columns added after the first release: applied idempotently by db.migrate() (works on MySQL and MariaDB).
 export const COLUMNS = [
   ['plans', 'paypal_plan_id', 'VARCHAR(64) NULL'],
+  ['plans', 'features', 'TEXT NULL'],
+  ['subscriptions', 'past_due_since', 'DATETIME NULL'],
   ['subscriptions', 'external_id', 'VARCHAR(64) NULL'],
   ['users', 'terms_accepted_at', 'DATETIME NULL'],
   ['payments', 'external_id', 'VARCHAR(80) NULL'],
@@ -165,6 +167,7 @@ export const DEFAULT_SETTINGS = {
   ai_research: { provider: 'anthropic', model: 'claude-opus-5-5' },
   ai_effort: 'medium',
   signup_mode: 'open', // open | invite | closed
+  past_due_grace_days: 7, // days a customer keeps a paid plan after a failed payment before dropping to Free
   paypal_mode: 'sandbox',
   paypal_client_id: '',
   paypal_webhook_id: '',

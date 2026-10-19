@@ -5,6 +5,8 @@ import { createPool, migrate } from './db.mjs'
 import { createApp } from './app.mjs'
 import { decrypt, encrypt, hashPassword, verifyPassword } from './crypto.mjs'
 import { computeFinance, monthRange } from './finance.mjs'
+import { enforceGrace } from './billing.mjs'
+import { parseFeatures, validateFeatures } from './features.mjs'
 import { extractJson, validateProposal } from './ai/proposal.mjs'
 import { computeCost } from './ai/cost.mjs'
 
@@ -44,6 +46,17 @@ describe('cost', () => {
   it('computes from admin prices and flags missing prices instead of inventing cost', () => {
     expect(computeCost('anthropic', { input: 1000, output: 500, cacheRead: 0, cacheWrite: 0 }, { input_per_mtok: 2, output_per_mtok: 10 }).cost).toBeCloseTo(0.007, 6)
     expect(computeCost('openai', { input: 1000, output: 500, cacheRead: 0, cacheWrite: 0 }, { input_per_mtok: null, output_per_mtok: null })).toEqual({ cost: 0, missing: true })
+  })
+})
+
+
+describe('plan features', () => {
+  it('normalises, clamps and validates', () => {
+    expect(parseFeatures(undefined)).toEqual({ researchPremium: true, cloudSync: true, maxModels: null, aiMaxChars: 12000 }) // legacy plans keep everything
+    expect(parseFeatures('{"aiMaxChars":999999,"maxModels":0}')).toMatchObject({ aiMaxChars: 12000, maxModels: null })
+    expect(parseFeatures({ researchPremium: false, maxModels: 5, aiMaxChars: 50 })).toMatchObject({ researchPremium: false, maxModels: 5, aiMaxChars: 200 })
+    expect(typeof validateFeatures({ maxModels: -1 })).toBe('string'); expect(typeof validateFeatures({ aiMaxChars: 13000 })).toBe('string')
+    expect(validateFeatures({ maxModels: '', aiMaxChars: 4000, cloudSync: false })).toMatchObject({ maxModels: null, cloudSync: false })
   })
 })
 
@@ -395,6 +408,71 @@ describe.skipIf(!up)('HTTP API on MySQL', () => {
       expect((await request(app).post('/api/auth/login').send({ email: 'u@example.com', password: 'another-long-pass' })).status).toBe(200)
       await admin.put('/api/admin/settings').send({ legalEntity: 'Acme S.A.', legalEmail: 'legal@acme.example' })
       expect((await request(app).get('/api/config')).body.legal).toEqual({ entity: 'Acme S.A.', email: 'legal@acme.example' })
+    })
+
+    it('ENFORCES plan features on the server: research model, idea length, cloud sync and model count', async () => {
+      const setFeat = (plan, f) => admin.put('/api/admin/plans').send({ id: plan, name: plan, priceCents: plan === 'pro' ? 1200 : 0, aiMonthlyQuota: null, features: f })
+      await pool.query("UPDATE users SET plan_id='free' WHERE email='u@example.com'"); await pool.query("UPDATE plans SET ai_monthly_quota=NULL WHERE id='free'")
+      // the seeded Free plan is restrictive by default; Pro is open (and this is what the public plans endpoint shows)
+      const pub = (await request(app).get('/api/plans')).body
+      expect(pub.find((p) => p.id === 'free').features).toEqual({ researchPremium: false, cloudSync: true, maxModels: 50, aiMaxChars: 4000 })
+      expect(pub.find((p) => p.id === 'pro').features).toMatchObject({ researchPremium: true, maxModels: null })
+      expect((await setFeat('free', { maxModels: 0 })).status).toBe(400)
+      expect((await setFeat('free', { aiMaxChars: 20000 })).status).toBe(400)
+      // 1) research mode on a plan without the premium model uses the default model, and says so
+      const r1 = await user.post('/api/analyze').send({ text: 'Explore the idea of rain and yield', mode: 'research' })
+      expect(r1.status).toBe(200); expect(r1.body.meta.downgraded).toBe(true); expect(calls.at(-1).model).toBe('claude-sonnet-5-5')
+      await setFeat('free', { researchPremium: true, cloudSync: true, maxModels: 50, aiMaxChars: 4000 })
+      const r2 = await user.post('/api/analyze').send({ text: 'Explore the idea of rain and yield', mode: 'research' })
+      expect(r2.body.meta.downgraded).toBe(false); expect(calls.at(-1).model).toBe('my-openai-model') // the configured research model
+      // admins are never restricted
+      expect((await admin.post('/api/analyze').send({ text: 'x'.repeat(9000) })).status).toBe(200)
+      // 2) idea length limit comes from the plan
+      await setFeat('free', { researchPremium: false, cloudSync: true, maxModels: 50, aiMaxChars: 300 })
+      const long = await user.post('/api/analyze').send({ text: 'y'.repeat(301) })
+      expect(long.status).toBe(413); expect(long.body.max).toBe(300)
+      expect((await user.post('/api/analyze').send({ text: 'y'.repeat(300) })).status).toBe(200)
+      expect((await user.get('/api/usage')).body.features.aiMaxChars).toBe(300)
+      // 3) model count limit counts only the user's own models, never the demo ones
+      await setFeat('free', { researchPremium: false, cloudSync: true, maxModels: 2, aiMaxChars: 300 })
+      const doc = (own, demo) => ({ schema: 1, models: [...Array.from({ length: own }, (_, i) => ({ id: `m${i}` })), ...Array.from({ length: demo }, (_, i) => ({ id: `d${i}`, isDemo: true }))], conversations: [], sources: [], relations: [], experiments: [] })
+      const v0 = (await user.get('/api/data')).body.version
+      const over = await user.put('/api/data').send({ data: doc(3, 5), version: v0 })
+      expect(over.status).toBe(403); expect(over.body).toMatchObject({ error: 'model_limit', limit: 2, count: 3 })
+      expect((await user.put('/api/data').send({ data: doc(2, 5), version: v0 })).status).toBe(200)
+      // 4) cloud sync switched off: writing is refused (feature_not_in_plan) but the user can still read their stored copy
+      await setFeat('free', { researchPremium: false, cloudSync: false, maxModels: 2, aiMaxChars: 300 })
+      const vOff = (await user.get('/api/data')).body.version
+      const off = await user.put('/api/data').send({ data: doc(1, 0), version: vOff })
+      expect(off.status).toBe(403); expect(off.body.feature).toBe('cloudSync')
+      expect((await user.get('/api/data')).status).toBe(200)
+      const vAdm = (await admin.get('/api/data')).body.version
+      expect((await admin.put('/api/data').send({ data: doc(5, 0), version: vAdm })).status).toBe(200) // admin exempt
+      await setFeat('free', { researchPremium: false, cloudSync: true, maxModels: 50, aiMaxChars: 4000 }) // restore
+    })
+    it('failed payment: keeps the paid plan during the grace period, then drops to Free; paying again restores it', async () => {
+      await admin.put('/api/admin/paypal').send({ webhookId: 'WHID' })
+      await pool.query('DELETE FROM billing_events')
+      const [[u]] = await pool.query("SELECT id FROM users WHERE email='u@example.com'")
+      await pool.query("INSERT INTO subscriptions (user_id,plan_id,status,amount_cents,interval_unit,started_at,source,external_id) VALUES (?,?,?,?,?,?,?,?)", [u.id, 'pro', 'active', 1200, 'month', new Date(), 'paypal', 'I-GRACE1'])
+      await pool.query("UPDATE users SET plan_id='pro' WHERE id=?", [u.id])
+      expect((await admin.put('/api/admin/settings').send({ pastDueGraceDays: 99 })).status).toBe(400)
+      expect((await admin.put('/api/admin/settings').send({ pastDueGraceDays: 7 })).status).toBe(200)
+      await hook(E({ event_type: 'BILLING.SUBSCRIPTION.PAYMENT.FAILED', resource: { id: 'I-GRACE1' } }))
+      const plan = async () => (await pool.query('SELECT plan_id FROM users WHERE id=?', [u.id]))[0][0].plan_id
+      expect(await plan()).toBe('pro') // still Pro: grace period
+      expect((await user.get('/api/billing/me')).body.subscription.status).toBe('past_due')
+      const day = 864e5
+      expect(await enforceGrace(pool, new Date(Date.now() + 3 * day))).toBe(0); expect(await plan()).toBe('pro')
+      await hook(E({ event_type: 'BILLING.SUBSCRIPTION.PAYMENT.FAILED', resource: { id: 'I-GRACE1' } })) // PayPal retries: must NOT reset the clock
+      const [[s1]] = await pool.query("SELECT past_due_since FROM subscriptions WHERE external_id='I-GRACE1'")
+      expect(Date.now() - new Date(s1.past_due_since).getTime()).toBeLessThan(60_000)
+      expect(await enforceGrace(pool, new Date(Date.now() + 8 * day))).toBe(1); expect(await plan()).toBe('free')
+      await hook(E({ event_type: 'PAYMENT.SALE.COMPLETED', resource: { id: 'GR-PAID', billing_agreement_id: 'I-GRACE1', amount: { total: '12.00', currency: 'USD' } } }))
+      expect(await plan()).toBe('pro') // paid again: plan restored
+      const [[s2]] = await pool.query("SELECT status, past_due_since FROM subscriptions WHERE external_id='I-GRACE1'")
+      expect(s2.status).toBe('active'); expect(s2.past_due_since).toBeNull()
+      await pool.query("UPDATE subscriptions SET status='canceled' WHERE external_id='I-GRACE1'"); await pool.query("UPDATE users SET plan_id='free' WHERE id=?", [u.id])
     })
   })
 })

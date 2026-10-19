@@ -27,4 +27,5 @@ export const api = {
 }
 
 export interface ServerUser { id: number; email: string; name: string; role: 'user' | 'admin'; planId: string }
-export interface Usage { used: number; quota: number | null; plan: string; resetsAt: string }
+export interface PlanFeatures { researchPremium: boolean; cloudSync: boolean; maxModels: number | null; aiMaxChars: number }
+export interface Usage { used: number; quota: number | null; plan: string; resetsAt: string; features?: PlanFeatures }

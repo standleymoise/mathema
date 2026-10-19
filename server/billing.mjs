@@ -54,17 +54,25 @@ export async function activateSubscription(pool, externalId) {
   if (sub.status === 'active') return true
   if (sub.status === 'canceled') return false
   await pool.query("UPDATE subscriptions SET status='canceled', canceled_at=? WHERE user_id=? AND status IN ('active','trialing','past_due') AND id<>?", [new Date(), sub.user_id, sub.id])
-  await pool.query("UPDATE subscriptions SET status='active', started_at=? WHERE id=?", [new Date(), sub.id])
+  await pool.query("UPDATE subscriptions SET status='active', started_at=?, past_due_since=NULL WHERE id=?", [sub.status === 'pending' ? new Date() : sub.started_at, sub.id])
   await pool.query('UPDATE users SET plan_id=? WHERE id=?', [sub.plan_id, sub.user_id])
   return true
 }
 async function endSubscription(pool, externalId, status) {
   const [[sub]] = await pool.query('SELECT * FROM subscriptions WHERE external_id=?', [externalId])
   if (!sub) return
-  await pool.query('UPDATE subscriptions SET status=?, canceled_at=? WHERE id=?', [status, status === 'canceled' ? new Date() : null, sub.id])
+  // past_due keeps the paid plan during the grace period (see enforceGrace); canceled drops to Free now
+  await pool.query('UPDATE subscriptions SET status=?, canceled_at=?, past_due_since=? WHERE id=?', [status, status === 'canceled' ? new Date() : null, status === 'past_due' ? sub.past_due_since ?? new Date() : null, sub.id])
   if (status === 'canceled') await pool.query("UPDATE users SET plan_id='free' WHERE id=? AND plan_id=?", [sub.user_id, sub.plan_id])
 }
 
+/** Drops customers whose payment failed more than `past_due_grace_days` ago to Free. Paying again restores the plan. */
+export async function enforceGrace(pool, now = new Date()) {
+  const days = Number(await getSetting(pool, 'past_due_grace_days'))
+  const cutoff = new Date(now.getTime() - (Number.isFinite(days) ? days : 7) * 864e5)
+  const [r] = await pool.query("UPDATE users u JOIN subscriptions s ON s.user_id=u.id SET u.plan_id='free' WHERE s.status='past_due' AND s.past_due_since IS NOT NULL AND s.past_due_since<=? AND u.plan_id=s.plan_id", [cutoff])
+  return r.affectedRows
+}
 
 /** Inserts a payment; a repeated PayPal id (unique index) is treated as already recorded, never as an error. */
 async function insertPayment(pool, { userId, cents: amount, when, note, externalId, fee = 0, estimated = 0 }) {
@@ -139,8 +147,8 @@ export function billingRoutes(pool, cfg) {
   const r = Router()
 
   r.get('/me', requireUser, async (req, res) => {
-    const [[sub]] = await pool.query("SELECT s.id, s.plan_id planId, s.status, s.amount_cents amountCents, s.interval_unit intervalUnit, s.started_at startedAt, s.source FROM subscriptions s WHERE s.user_id=? AND s.status IN ('active','past_due','trialing') ORDER BY s.id DESC LIMIT 1", [req.user.id])
-    res.json({ subscription: sub ?? null })
+    const [[sub]] = await pool.query("SELECT s.id, s.plan_id planId, s.status, s.amount_cents amountCents, s.interval_unit intervalUnit, s.started_at startedAt, s.past_due_since pastDueSince, s.source FROM subscriptions s WHERE s.user_id=? AND s.status IN ('active','past_due','trialing') ORDER BY s.id DESC LIMIT 1", [req.user.id])
+    res.json({ subscription: sub ?? null, graceDays: Number(await getSetting(pool, 'past_due_grace_days')) })
   })
 
   r.post('/checkout', requireUser, async (req, res) => {

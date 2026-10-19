@@ -10,6 +10,7 @@ import { keyStatus } from './keys.mjs'
 import { billingRoutes, paypalConfig } from './billing.mjs'
 import { accountRoutes } from './account.mjs'
 import { requireUser } from './auth.mjs'
+import { featuresFor, parseFeatures } from './features.mjs'
 import rateLimit from 'express-rate-limit'
 
 export function createApp(pool, cfg, deps = {}) {
@@ -43,11 +44,12 @@ export function createApp(pool, cfg, deps = {}) {
       server: true, signupMode: await getSetting(pool, 'signup_mode'), aiAvailable: ks.configured, billingEnabled: pc.configured && !!pc.webhookId,
       legal: { entity: await getSetting(pool, 'legal_entity'), email: await getSetting(pool, 'legal_email') },
       user: req.user ? { id: req.user.id, email: req.user.email, name: req.user.name, role: req.user.role, planId: req.user.plan_id } : null,
+      features: req.user ? await featuresFor(pool, req.user) : null,
     })
   })
   api.get('/plans', async (_req, res) => {
-    const [rows] = await pool.query('SELECT id,name,price_cents priceCents,interval_unit intervalUnit,ai_monthly_quota aiMonthlyQuota,(paypal_plan_id IS NOT NULL AND paypal_plan_id<>\'\') purchasable FROM plans WHERE active=1 ORDER BY price_cents')
-    res.json(rows.map((p) => ({ ...p, purchasable: !!p.purchasable })))
+    const [rows] = await pool.query('SELECT id,name,price_cents priceCents,interval_unit intervalUnit,ai_monthly_quota aiMonthlyQuota,features,(paypal_plan_id IS NOT NULL AND paypal_plan_id<>\'\') purchasable FROM plans WHERE active=1 ORDER BY price_cents')
+    res.json(rows.map((p) => ({ ...p, features: parseFeatures(p.features), purchasable: !!p.purchasable })))
   })
   const fbLimit = rateLimit({ windowMs: 60_000, limit: cfg.prod ? 5 : 1000, keyGenerator: (req) => `u${req.user?.id ?? req.ip}`, validate: { keyGeneratorIpFallback: false } })
   api.post('/feedback', requireUser, fbLimit, async (req, res) => {

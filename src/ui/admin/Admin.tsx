@@ -126,7 +126,7 @@ function FinanceTab({ lang }: { lang: 'en' | 'es' }) {
 // ---- AI & keys ------------------------------------------------------------------------------
 interface KeyS { provider: string; configured: boolean; source: 'admin' | 'env' | null; last4: string | null; verifiedAt: string | null }
 interface ModelRow { provider: string; model: string; label: string; inputPerMtok: number | null; outputPerMtok: number | null; enabled: boolean }
-interface Settings { aiDefault: { provider: string; model: string }; aiResearch: { provider: string; model: string }; aiEffort: string; signupMode: 'open' | 'invite' | 'closed'; dailyCapPerUser: number; legalEntity: string; legalEmail: string; paypalFeePercent: number; paypalFeeFixedCents: number }
+interface Settings { aiDefault: { provider: string; model: string }; aiResearch: { provider: string; model: string }; aiEffort: string; signupMode: 'open' | 'invite' | 'closed'; dailyCapPerUser: number; legalEntity: string; legalEmail: string; paypalFeePercent: number; paypalFeeFixedCents: number; pastDueGraceDays: number }
 
 function KeyCard({ k, lang, reload }: { k: KeyS; lang: 'en' | 'es'; reload: () => void }) {
   const L = (en: string, es: string) => tr(lang, en, es)
@@ -213,7 +213,8 @@ function AiTab({ lang }: { lang: 'en' | 'es' }) {
 
 // ---- Users & plans --------------------------------------------------------------------------
 interface UserRow { id: number; email: string; name: string; role: 'user' | 'admin'; planId: string; disabled: boolean; analysesThisMonth: number; costThisMonth: number; lastLogin: string | null }
-interface PlanRow { id: string; name: string; priceCents: number; intervalUnit: 'month' | 'year'; aiMonthlyQuota: number | null; paypalPlanId: string | null; active: boolean }
+interface PlanFeat { researchPremium: boolean; cloudSync: boolean; maxModels: number | null; aiMaxChars: number }
+interface PlanRow { id: string; name: string; priceCents: number; intervalUnit: 'month' | 'year'; aiMonthlyQuota: number | null; paypalPlanId: string | null; features: PlanFeat; active: boolean }
 interface SubRow { id: number; email: string | null; planId: string; status: string; amountCents: number; intervalUnit: string; startedAt: string }
 
 function PlanEditor({ p, lang, reload }: { p: PlanRow; lang: 'en' | 'es'; reload: () => void }) {
@@ -232,6 +233,27 @@ function PlanEditor({ p, lang, reload }: { p: PlanRow; lang: 'en' | 'es'; reload
   )
 }
 
+function FeatureEditor({ p, lang, reload }: { p: PlanRow; lang: 'en' | 'es'; reload: () => void }) {
+  const [f, setF] = useState({ research: p.features.researchPremium, sync: p.features.cloudSync, models: p.features.maxModels === null ? '' : String(p.features.maxModels), chars: String(p.features.aiMaxChars) })
+  return (
+    <tr className="border-t border-line align-middle">
+      <td className="py-1.5 pr-2 text-[13px]">{p.name}<div className="font-mono text-[11px] text-mute">{p.id}</div></td>
+      <td className="px-1 text-center"><input type="checkbox" aria-label={`${p.name} research premium`} checked={f.research} onChange={(e) => setF({ ...f, research: e.target.checked })} className="h-4 w-4 accent-[rgb(var(--accent))]" /></td>
+      <td className="px-1 text-center"><input type="checkbox" aria-label={`${p.name} cloud sync`} checked={f.sync} onChange={(e) => setF({ ...f, sync: e.target.checked })} className="h-4 w-4 accent-[rgb(var(--accent))]" /></td>
+      <td className="px-1"><input aria-label={`${p.name} max models`} inputMode="numeric" placeholder="∞" className={cx(input, 'w-20 font-mono')} value={f.models} onChange={(e) => setF({ ...f, models: e.target.value.replace(/\D/g, '') })} /></td>
+      <td className="px-1"><input aria-label={`${p.name} max idea characters`} inputMode="numeric" className={cx(input, 'w-24 font-mono')} value={f.chars} onChange={(e) => setF({ ...f, chars: e.target.value.replace(/\D/g, '') })} /></td>
+      <td className="text-right"><Btn size="sm" variant="outline" onClick={() => act(api.put('admin/plans', { id: p.id, name: p.name, priceCents: p.priceCents, intervalUnit: p.intervalUnit, aiMonthlyQuota: p.aiMonthlyQuota, paypalPlanId: p.paypalPlanId, active: p.active, features: { researchPremium: f.research, cloudSync: f.sync, maxModels: f.models === '' ? null : Number(f.models), aiMaxChars: Number(f.chars) } }), tr(lang, 'Features saved.', 'Beneficios guardados.'), reload)}>{tr(lang, 'Save', 'Guardar')}</Btn></td>
+    </tr>
+  )
+}
+
+function GraceInput({ lang }: { lang: 'en' | 'es' }) {
+  const { data, reload } = useAdmin<Settings>('settings')
+  const [v, setV] = useState('')
+  useEffect(() => { if (data) setV(String(data.pastDueGraceDays ?? 7)) }, [data])
+  return <><input aria-label="Grace days" inputMode="numeric" className={cx(input, 'w-20 font-mono')} value={v} onChange={(e) => setV(e.target.value.replace(/\D/g, ''))} /><Btn size="sm" variant="outline" onClick={() => act(api.put('admin/settings', { pastDueGraceDays: Number(v || 0) }), tr(lang, 'Saved.', 'Guardado.'), reload)}>{tr(lang, 'Save', 'Guardar')}</Btn></>
+}
+
 function PeopleTab({ lang }: { lang: 'en' | 'es' }) {
   const L = (en: string, es: string) => tr(lang, en, es)
   const users = useAdmin<UserRow[]>('users'), plans = useAdmin<PlanRow[]>('plans'), subs = useAdmin<SubRow[]>('subscriptions')
@@ -248,6 +270,14 @@ function PeopleTab({ lang }: { lang: 'en' | 'es' }) {
           <input aria-label="New plan price" inputMode="decimal" className={cx(input, 'w-24')} placeholder="USD" value={np.price} onChange={(e) => setNp({ ...np, price: e.target.value })} />
           <Btn type="submit" variant="outline" size="sm" className="h-9" disabled={np.id.length < 2}>{L('Add plan', 'Agregar plan')}</Btn>
         </form>
+      </div>
+
+      <div className={card}><Label>{L('Plan features (enforced by the server)', 'Beneficios por plan (los aplica el servidor)')}</Label>
+        <p className="mb-2 text-xs text-mute">{L('AI analyses per month is set in the table above. Admins are never restricted. Changes apply immediately to every user on that plan. Downloading your own data is not gated: the Privacy Policy promises it to everyone.', 'Los análisis de IA por mes se definen en la tabla de arriba. Los admins nunca tienen restricciones. Los cambios se aplican de inmediato a todos los usuarios de ese plan. Descargar los propios datos no se restringe: la Política de privacidad se lo promete a todos.')}</p>
+        <div className="overflow-x-auto"><table className="w-full text-[13px]"><thead><tr className="text-left text-[11px] uppercase tracking-wide text-mute"><th className="pb-1 font-medium">Plan</th><th className="text-center font-medium">{L('Premium research', 'Investigar premium')}</th><th className="text-center font-medium">{L('Cloud sync', 'Sincronización')}</th><th className="font-medium">{L('Max models', 'Máx. modelos')}</th><th className="font-medium">{L('Max idea chars (AI)', 'Máx. caracteres (IA)')}</th><th /></tr></thead>
+          <tbody>{(plans.data ?? []).map((p) => <FeatureEditor key={`${p.id}${JSON.stringify(p.features)}`} p={p} lang={lang} reload={plans.reload} />)}</tbody></table></div>
+        <label className="mt-3 flex flex-wrap items-center gap-2 text-[13px]">{L('Grace period after a failed payment (days)', 'Período de gracia tras un pago fallido (días)')}
+          <GraceInput lang={lang} /></label>
       </div>
 
       <div className={card}><Label>{L('Users', 'Usuarios')} ({users.data?.length ?? 0})</Label>
