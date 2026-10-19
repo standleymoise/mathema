@@ -16,7 +16,7 @@ export const MODES: { id: Mode; icon: typeof Brain; label: Key; desc: Key }[] = 
 const TEXT_EXT = /\.(txt|md|csv|tsv|json|tex|dat)$/i
 const SAMPLE_TABLE = 'rainfall_mm,yield_t_ha\n310,3.2\n355,3.6\n402,4.1\n448,4.3\n490,4.6\n525,4.5\n560,4.9\n610,4.8\n655,4.9\n700,4.7'
 
-interface SR { start(): void; stop(): void; onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null; onerror: ((e: { error: string }) => void) | null; onend: (() => void) | null; lang: string; interimResults: boolean; continuous: boolean }
+interface SR { start(): void; stop(): void; abort?(): void; onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => void) | null; onerror: ((e: { error: string }) => void) | null; onend: (() => void) | null; lang: string; interimResults: boolean; continuous: boolean }
 
 export default function Composer({ compact = false }: { compact?: boolean }) {
   const t = useT()
@@ -29,6 +29,8 @@ export default function Composer({ compact = false }: { compact?: boolean }) {
   const [files, setFiles] = useState<AttachedFile[]>([])
   const [menu, setMenu] = useState<null | 'mode' | 'data'>(null)
   const [listening, setListening] = useState(false)
+  const [heard, setHeard] = useState('')
+  const [secs, setSecs] = useState(0)
   const ta = useRef<HTMLTextAreaElement>(null)
   const fileIn = useRef<HTMLInputElement>(null)
   const rec = useRef<SR | null>(null)
@@ -77,13 +79,24 @@ export default function Composer({ compact = false }: { compact?: boolean }) {
       ta.current?.focus()
     }
   }
+  useEffect(() => {
+    if (!listening) { setSecs(0); setHeard(''); return }
+    const id = setInterval(() => setSecs((n) => n + 1), 1000)
+    return () => clearInterval(id)
+  }, [listening])
+  useEffect(() => () => rec.current?.abort?.(), [])
   const mic = () => {
     if (listening) { rec.current?.stop(); return }
     const Ctor = ((window as unknown as Record<string, unknown>).SpeechRecognition ?? (window as unknown as Record<string, unknown>).webkitSpeechRecognition) as (new () => SR) | undefined
     if (!Ctor) { toast(tr(lang, 'Voice dictation is not available in this browser (try Chrome or Safari). You can type or paste instead.', 'El dictado por voz no está disponible en este navegador (probá Chrome o Safari). Podés escribir o pegar.'), 'warn'); return }
     const r = new Ctor()
-    r.lang = lang === 'es' ? 'es-ES' : 'en-US'; r.interimResults = false; r.continuous = false
-    r.onresult = (e) => { const s = Array.from(e.results).map((x) => x[0].transcript).join(' '); setText((p) => (p ? p + ' ' : '') + s) }
+    r.lang = lang === 'es' ? 'es-ES' : 'en-US'; r.interimResults = true; r.continuous = false
+    r.onresult = (e) => {
+      const parts = Array.from(e.results)
+      const finals = parts.filter((x) => x.isFinal).map((x) => x[0].transcript).join(' ').trim()
+      setHeard(parts.filter((x) => !x.isFinal).map((x) => x[0].transcript).join(' '))
+      if (finals) { setText((p) => (p ? p + ' ' : '') + finals); setHeard('') }
+    }
     r.onerror = (e) => { setListening(false); toast(e.error === 'not-allowed' ? tr(lang, 'Microphone permission was denied. Allow it in the browser’s site settings, or type instead.', 'Se denegó el permiso del micrófono. Permitilo en la configuración del sitio, o escribí.') : tr(lang, `Voice input failed (${e.error}).`, `Falló la entrada de voz (${e.error}).`), 'warn') }
     r.onend = () => setListening(false)
     rec.current = r
@@ -93,6 +106,14 @@ export default function Composer({ compact = false }: { compact?: boolean }) {
   const hint = mode === 'experiment' || mode === 'understand' || mode === 'research' || mode === 'connect' ? (selected ? `${current && t(current.label)} · ${selected.title}` : undefined) : undefined
   return (
     <div ref={wrap} className={cx('relative mx-auto w-full max-w-3xl px-3 sm:px-4', compact ? 'pb-3' : 'pb-4')}>
+      {listening && (
+        <div role="status" aria-live="polite" className="fade-in mb-2 flex items-center gap-2.5 rounded-xl border border-bad/40 bg-[rgb(var(--bad)/.08)] px-3 py-2 text-[13px]">
+          <span className="relative flex h-2.5 w-2.5 shrink-0"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-bad opacity-60" /><span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-bad" /></span>
+          <span className="font-medium text-bad">{tr(lang, 'Recording audio', 'Grabando audio')} · {Math.floor(secs / 60)}:{String(secs % 60).padStart(2, '0')}</span>
+          <span className="min-w-0 flex-1 truncate text-mute">{heard || tr(lang, 'Speak now…', 'Hablá ahora…')}</span>
+          <button onClick={mic} className="shrink-0 rounded-lg border border-bad/40 px-2.5 py-1 text-xs font-medium text-bad hover:bg-[rgb(var(--bad)/.12)]">{tr(lang, 'Stop', 'Detener')}</button>
+        </div>
+      )}
       {processing && (
         <div role="status" aria-live="polite" className="fade-in mb-2 flex items-center gap-2 px-2 text-[13px] text-mute">
           <span className="flex gap-1"><i className="pulse-dot h-1.5 w-1.5 rounded-full bg-accent" /><i className="pulse-dot h-1.5 w-1.5 rounded-full bg-accent [animation-delay:.2s]" /><i className="pulse-dot h-1.5 w-1.5 rounded-full bg-accent [animation-delay:.4s]" /></span>{processing}
@@ -138,7 +159,7 @@ export default function Composer({ compact = false }: { compact?: boolean }) {
             )}
           </div>
           <div className="ml-auto flex items-center gap-0.5">
-            <IconBtn label={listening ? tr(lang, 'Stop dictation', 'Detener dictado') : t('mic')} aria-pressed={listening} onClick={mic} className={cx(listening && 'bg-[rgb(var(--bad)/.12)] text-bad')}><Mic size={18} /></IconBtn>
+            <IconBtn label={listening ? tr(lang, 'Stop dictation', 'Detener dictado') : t('mic')} aria-pressed={listening} onClick={mic} className={cx(listening && 'bg-[rgb(var(--bad)/.12)] text-bad')}><Mic size={18} className={cx(listening && 'animate-pulse')} /></IconBtn>
             <Btn variant="primary" aria-label={t('send')} onClick={submit} disabled={!!processing || (!text.trim() && !files.length)} className="ml-1 h-10 w-10 rounded-xl px-0">{processing ? <Square size={14} fill="currentColor" /> : <ArrowUp size={19} />}</Btn>
           </div>
         </div>
